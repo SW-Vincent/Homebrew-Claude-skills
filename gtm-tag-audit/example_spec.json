@@ -1,0 +1,405 @@
+{
+  "lang": "en",
+  "title": "Tag management audit - www.example-shop.com",
+  "subtitle": "Fictional example: 3 tools side by side (GTM, Matomo Tag Manager, Tag Commander), sources of different kinds",
+  "method_note": "Method: static reading of the containers (tags, triggers, blockers, scopes). GTM read from an interface export, Matomo Tag Manager and Tag Commander read from the client code. To be confirmed in the Preview/Debug mode of each tool on the live site.",
+  "sources": [
+    {
+      "platform": "GTM",
+      "container": "GTM-XXXXXXX",
+      "version": "12",
+      "source": "Interface export",
+      "generated": "2026-01-15",
+      "limits": "Names, triggers and blockers available. Infrastructure tags (listeners) do not exist in an export and are excluded from the inventory."
+    },
+    {
+      "platform": "MTM",
+      "container": "AbCdEfGh (site 1)",
+      "version": "revision 7",
+      "source": "Client code",
+      "generated": "2026-01-15",
+      "limits": "Tag names replaced by an MD5 hash, triggers and variables unnamed. Published environment only, paused tags not visible."
+    },
+    {
+      "platform": "Tag Commander",
+      "container": "IDS 1234 / IDTC 5",
+      "version": "12.03",
+      "source": "Client code",
+      "generated": "2026-01-15",
+      "limits": "Per-tag consent categories not visible (separate privacy module). Custom-event triggers unnamed. No interface export available."
+    }
+  ],
+  "kpis": [
+    {
+      "label": "GA4 present",
+      "value": "YES: G-XXXXXXXXXX (GTM, tags 20 and 21)"
+    },
+    {
+      "label": "Google Consent Mode (GTM)",
+      "value": "Mixed: Advanced for GA4 (tags 20 and 21), Basic for Google Ads (tag 30)"
+    },
+    {
+      "label": "Matomo: consent required (configMtm)",
+      "value": "YES (requireConsent = true), granted by MTM tag 201"
+    },
+    {
+      "label": "Tag Commander: per-tag consent",
+      "value": "Not determinable from the client code*"
+    },
+    {
+      "label": "Google Ads tags, all platforms",
+      "formula": "=COUNTIF({CATEGORY},\"Google Ads\")"
+    },
+    {
+      "label": "Duplicate deployments across platforms",
+      "value": "2 (Meta Pixel, Matomo page view)"
+    }
+  ],
+  "categories": [
+    "Google Analytics 4",
+    "Google Ads",
+    "Meta (Facebook)",
+    "Display network",
+    "LinkedIn",
+    "Matomo",
+    "Consent (CMP)",
+    "To identify"
+  ],
+  "tags": [
+    {
+      "platform": "GTM",
+      "id": "10",
+      "name": "CMP - Consent initialization",
+      "category": "Consent (CMP)",
+      "technical_type": "Custom HTML (html)",
+      "data_sent": "gtag('consent','default'): ad_storage and analytics_storage = denied, wait_for_update 500 ms",
+      "trigger": "Consent Initialization - All Pages (CONSENT_INIT)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": "Consent Mode Default only. No Update tag in the container."
+    },
+    {
+      "platform": "GTM",
+      "id": "20",
+      "name": "Google tag - GA4",
+      "category": "Google Analytics 4",
+      "technical_type": "Google tag (googtag)",
+      "data_sent": "GA4 configuration, measurement ID G-XXXXXXXXXX",
+      "trigger": "All Pages (PAGEVIEW)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": "No consent condition: fires before the user's choice (Advanced)."
+    },
+    {
+      "platform": "GTM",
+      "id": "21",
+      "name": "GA4 - Purchase event",
+      "category": "Google Analytics 4",
+      "technical_type": "GA4 event (gaawe)",
+      "data_sent": "purchase event to G-XXXXXXXXXX",
+      "trigger": "CE - purchase (custom event purchase)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": "No consent condition."
+    },
+    {
+      "platform": "GTM",
+      "id": "30",
+      "name": "Google Ads - Purchase conversion",
+      "category": "Google Ads",
+      "technical_type": "Google Ads conversion (awct)",
+      "data_sent": "Conversion AW-000000000, label XXXXXXXXXXXX, value = dataLayer ecommerce.value",
+      "trigger": "CE - purchase + marketing consent (event purchase AND cookie cmp_consent contains marketing:true)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": "Gated by a trigger condition on the CMP cookie (Basic behaviour)."
+    },
+    {
+      "platform": "GTM",
+      "id": "40",
+      "name": "Meta Pixel - Base",
+      "category": "Meta (Facebook)",
+      "technical_type": "Custom template (cvt_ABC12, Meta Pixel)",
+      "data_sent": "PageView, pixel 000000000000000",
+      "trigger": "All Pages (PAGEVIEW)",
+      "blocker": "Marketing consent denied (blocks as long as cmp_consent does not contain marketing:true)",
+      "scope": "",
+      "status": "Active",
+      "notes": "The same pixel is also deployed through Tag Commander (tags 111 and 132): risk of double counting."
+    },
+    {
+      "platform": "GTM",
+      "id": "50",
+      "name": "Self-hosted Matomo - Page view",
+      "category": "Matomo",
+      "technical_type": "Custom HTML (html)",
+      "data_sent": "trackPageView to analytics.example.org, site 1",
+      "trigger": "All Pages (PAGEVIEW)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": "ANOMALY: the same page view is sent by MTM (tag 202) to the same server and the same idSite. No consent condition here."
+    },
+    {
+      "platform": "GTM",
+      "id": "60",
+      "name": "Display network - Pixel",
+      "category": "Display network",
+      "technical_type": "Custom HTML (html)",
+      "data_sent": "Image pixel pixel.display-network-example.net (e=view)",
+      "trigger": "CE - cmp_update + marketing granted (event cmp_update AND marketing:true)",
+      "blocker": "Blocker - marketing granted (any event AND marketing:true)",
+      "scope": "",
+      "status": "Active",
+      "notes": "ANOMALY: the blocker has the same condition as the trigger (marketing:true). Blocking always wins, so the tag can never fire."
+    },
+    {
+      "platform": "GTM",
+      "id": "70",
+      "name": "Legacy affiliate pixel",
+      "category": "To identify",
+      "technical_type": "Custom HTML (html), paused",
+      "data_sent": "Not determinable (paused tag)",
+      "trigger": "All Pages (PAGEVIEW)",
+      "blocker": "",
+      "scope": "",
+      "status": "Inactive (paused)",
+      "notes": "Leftover paused tag, to delete."
+    },
+    {
+      "platform": "MTM",
+      "id": "201",
+      "name": "(unnamed) Custom HTML, setConsentGiven",
+      "category": "Matomo",
+      "technical_type": "CustomHtml",
+      "data_sent": "_paq.push(['setConsentGiven'])",
+      "trigger": "Custom event cmp_consent_granted (trigger 102)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": "Lifts the measurement block defined by configMtm (requireConsent = true)."
+    },
+    {
+      "platform": "MTM",
+      "id": "202",
+      "name": "(unnamed) Matomo, page view",
+      "category": "Matomo",
+      "technical_type": "Matomo (pageview)",
+      "data_sent": "Page view to analytics.example.org, idSite 1",
+      "trigger": "Page view (trigger 101)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": "ANOMALY: duplicate of GTM tag 50 (same server, same idSite)."
+    },
+    {
+      "platform": "MTM",
+      "id": "203",
+      "name": "(unnamed) Matomo, purchase event",
+      "category": "Matomo",
+      "technical_type": "Matomo (event)",
+      "data_sent": "Event Ecommerce / Purchase / Confirmation",
+      "trigger": "Custom event purchase (trigger 104)",
+      "blocker": "",
+      "scope": "",
+      "status": "Active",
+      "notes": ""
+    },
+    {
+      "platform": "MTM",
+      "id": "204",
+      "name": "(unnamed) Matomo, outbound link click event",
+      "category": "Matomo",
+      "technical_type": "Matomo (event)",
+      "data_sent": "Event Links / Outbound / page URL",
+      "trigger": "Click on a link whose destination URL is not example-shop.com (trigger 103)",
+      "blocker": "Event cmp_consent_update when the CMP cookie does not match analytics:true (trigger 105)",
+      "scope": "",
+      "status": "Active",
+      "notes": ""
+    },
+    {
+      "platform": "MTM",
+      "id": "206",
+      "name": "(unnamed) Matomo, promo banner event",
+      "category": "Matomo",
+      "technical_type": "Matomo (event)",
+      "data_sent": "Event Promo / View / Banner",
+      "trigger": "Page view (trigger 101)",
+      "blocker": "",
+      "scope": "",
+      "status": "Inactive (expired)",
+      "notes": "Scheduled until 2025-12-31 23:59:59, still present after the end date. To delete."
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "110",
+      "name": "Google Ads - Global site tag (all pages)",
+      "category": "Google Ads",
+      "technical_type": "Template 2403",
+      "data_sent": "Loads gtag.js, account AW-000000000",
+      "trigger": "DOM ready (DOM Ready)",
+      "blocker": "",
+      "scope": "No condition (all pages)",
+      "status": "Active",
+      "notes": ""
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "111",
+      "name": "Meta - Pixel (all pages)",
+      "category": "Meta (Facebook)",
+      "technical_type": "Template 2652",
+      "data_sent": "fbq init 000000000000000, PageView",
+      "trigger": "DOM ready (DOM Ready)",
+      "blocker": "",
+      "scope": "No condition (all pages)",
+      "status": "Active",
+      "notes": "Same pixel as GTM tag 40: risk of double counting. Consent not determinable from the client code*."
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "120",
+      "name": "Google Ads - Order confirmation conversion",
+      "category": "Google Ads",
+      "technical_type": "Template 26 (custom tag)",
+      "data_sent": "Conversion AW-000000000/XXXXXXXXXXXX, value = order_total",
+      "trigger": "DOM ready (DOM Ready)",
+      "blocker": "",
+      "scope": "Path matches ^/checkout/confirmation(/?)$",
+      "status": "Active",
+      "notes": ""
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "121",
+      "name": "Display - Promo landing pixel",
+      "category": "Display network",
+      "technical_type": "Template 26 (custom tag)",
+      "data_sent": "Image pixel pixel.display-network-example.net (e=promo)",
+      "trigger": "DOM ready (DOM Ready)",
+      "blocker": "",
+      "scope": "URL = https://www.example-shop.com/promo/",
+      "status": "Active",
+      "notes": ""
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "122",
+      "name": "Trial offers pixel",
+      "category": "Display network",
+      "technical_type": "Template 26 (custom tag)",
+      "data_sent": "Image pixel pixel.display-network-example.net (e=trial)",
+      "trigger": "DOM ready (DOM Ready)",
+      "blocker": "",
+      "scope": "offer_type = free OR offer_type = trial",
+      "status": "Active",
+      "notes": "Compiled in inverted form (expr||(tag)): read here the right way round, the tag runs when the offer is free or a trial."
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "123",
+      "name": "LinkedIn - Insight tag",
+      "category": "LinkedIn",
+      "technical_type": "Template 26 (custom tag)",
+      "data_sent": "Loads snap.licdn.com insight.min.js",
+      "trigger": "DOM ready (DOM Ready)",
+      "blocker": "",
+      "scope": "URL contains /cart OR URL contains /account",
+      "status": "Active",
+      "notes": "Compiled in inverted form, read the right way round."
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "132",
+      "name": "Meta - Purchase",
+      "category": "Meta (Facebook)",
+      "technical_type": "Template 2652",
+      "data_sent": "fbq track Purchase",
+      "trigger": "Custom event tC.event.purchase (trigger 11)",
+      "blocker": "",
+      "scope": "Path matches ^/checkout/confirmation(/?)$",
+      "status": "Active",
+      "notes": "Consent not determinable from the client code*."
+    },
+    {
+      "platform": "Tag Commander",
+      "id": "140",
+      "name": "(unnamed) tag defined but never launched",
+      "category": "To identify",
+      "technical_type": "Not determinable",
+      "data_sent": "Image pixel old-pixel.example.net/legacy",
+      "trigger": "None (called by no trigger)",
+      "blocker": "",
+      "scope": "",
+      "status": "Inactive (never launched)",
+      "notes": "Orphan tag: present in the container, never launched."
+    }
+  ],
+  "consent_rows": [
+    [
+      "GTM",
+      "Google Consent Mode (ad_storage, analytics_storage)",
+      "CMP (cookie cmp_consent, marketing category)",
+      "Mixed: GA4 not gated (Advanced), Google Ads gated on marketing:true (Basic), Meta blocked as long as marketing:true is absent",
+      "Tag 10: gtag('consent','default') with ad_storage and analytics_storage = denied, wait_for_update 500 ms",
+      "No Update tag identified in the container (update assumed to be handled by the CMP)"
+    ],
+    [
+      "MTM",
+      "Matomo consent (requireConsent)",
+      "configMtm configuration variable: requireConsent = true, rememberConsentGiven = true (8760 h)",
+      "No measurement request before consent; consent granted by tag 201",
+      "configMtm variable",
+      "Tag 201 (setConsentGiven) triggered by the cmp_consent_granted event"
+    ],
+    [
+      "Tag Commander",
+      "Per-tag consent categories",
+      "Privacy module (tC.privacy), TC_PRIVACY cookie",
+      "Not determinable from the client code*",
+      "Not visible in the client code",
+      "Not visible in the client code"
+    ]
+  ],
+  "consent_extra_notes": [
+    "Consent cookie read by GTM: cmp_consent (Cookie CMP variable).",
+    "CMP events used: cmp_update (GTM), cmp_consent_granted and cmp_consent_update (MTM)."
+  ],
+  "constats": [
+    {
+      "title": "ANOMALY 1: GTM tag 60 (Display network) can never fire",
+      "highlight": true,
+      "text": "The trigger requires cmp_update AND marketing:true. The blocker fires on any event AND marketing:true. When the trigger is true the blocker is true too, and blocking always wins. Check the intent: the blocker was probably meant to test the absence of consent (negated marketing:true), as tag 40 (Meta) does."
+    },
+    {
+      "title": "ANOMALY 2: the Matomo page view is sent twice",
+      "highlight": true,
+      "text": "GTM tag 50 (Custom HTML) and MTM tag 202 both send a page view to the analytics.example.org server, site 1. Only one of the two implementations should remain. Note that only the MTM tag is subject to requireConsent: GTM tag 50 has no consent condition."
+    },
+    {
+      "title": "Meta pixel deployed in two tools",
+      "highlight": false,
+      "text": "Pixel 000000000000000 is loaded by GTM tag 40 (with a consent blocker) and by Tag Commander tags 111 and 132. Without coordination, PageView and Purchase events can be counted twice. Consent on the Tag Commander side cannot be verified from the client code."
+    },
+    {
+      "title": "Leftover tags to clean up",
+      "highlight": false,
+      "text": "GTM 70 (paused), MTM 206 (campaign ended on 2025-12-31) and Tag Commander 140 (defined but never launched) no longer have any effect but weigh down the containers."
+    },
+    {
+      "title": "Tag Commander: scopes to read with care",
+      "highlight": false,
+      "text": "The compiled code puts the scope in front of each tag. When it takes the form expr||(tag), the tag runs if expr is FALSE: tags 122 and 123 are read here the right way round (De Morgan). To be confirmed in the Tag Commander debug mode."
+    },
+    {
+      "title": "Google Consent Mode: mixed implementation",
+      "highlight": false,
+      "text": "The GA4 tags (20 and 21) fire without any consent condition, which matches Advanced if the consent signals are properly updated by the CMP. Google Ads (30) is gated on marketing consent, which matches Basic. Check that no Update tag is needed on the CMP side."
+    }
+  ]
+}

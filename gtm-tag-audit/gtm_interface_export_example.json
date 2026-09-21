@@ -1,0 +1,598 @@
+{
+  "exportFormatVersion": 2,
+  "exportTime": "2026-01-15 09:00:00",
+  "containerVersion": {
+    "path": "accounts/0000000000/containers/0000000/versions/12",
+    "accountId": "0000000000",
+    "containerId": "0000000",
+    "containerVersionId": "12",
+    "name": "Example version",
+    "container": {
+      "path": "accounts/0000000000/containers/0000000",
+      "accountId": "0000000000",
+      "containerId": "0000000",
+      "name": "www.example-shop.com",
+      "publicId": "GTM-XXXXXXX",
+      "usageContext": [
+        "WEB"
+      ],
+      "fingerprint": "1700000000000",
+      "tagManagerUrl": "https://tagmanager.google.com/#/container/accounts/0000000000/containers/0000000/workspaces?apiLink=container",
+      "features": {
+        "supportUserPermissions": true,
+        "supportEnvironments": true
+      },
+      "tagIds": [
+        "GTM-XXXXXXX"
+      ]
+    },
+    "tag": [
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "10",
+        "name": "CMP - Consent initialization",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('consent','default',{'ad_storage':'denied','analytics_storage':'denied','wait_for_update':500});</script>"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "1"
+        ],
+        "tagFiringOption": "ONCE_PER_EVENT",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        }
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "20",
+        "name": "Google tag - GA4",
+        "type": "googtag",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "tagId",
+            "value": "G-XXXXXXXXXX"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "2"
+        ],
+        "tagFiringOption": "ONCE_PER_LOAD",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        }
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "21",
+        "name": "GA4 - Purchase event",
+        "type": "gaawe",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "purchase"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementIdOverride",
+            "value": "G-XXXXXXXXXX"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "3"
+        ],
+        "tagFiringOption": "ONCE_PER_EVENT",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        }
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "30",
+        "name": "Google Ads - Purchase conversion",
+        "type": "awct",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "conversionValue",
+            "value": "{{DL - order value}}"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "conversionId",
+            "value": "000000000"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "conversionLabel",
+            "value": "XXXXXXXXXXXX"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "enableConversionLinker",
+            "value": "true"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "4"
+        ],
+        "tagFiringOption": "ONCE_PER_EVENT",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        }
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "40",
+        "name": "Meta Pixel - Base",
+        "type": "cvt_ABC12",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "pixelId",
+            "value": "000000000000000"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "standardEventName",
+            "value": "PageView"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "standard"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "2"
+        ],
+        "tagFiringOption": "ONCE_PER_LOAD",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        },
+        "blockingTriggerId": [
+          "5"
+        ]
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "50",
+        "name": "Self-hosted Matomo - Page view",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>var _paq=window._paq=window._paq||[];_paq.push(['trackPageView']);(function(){var u=\"https://analytics.example.org/\";_paq.push(['setTrackerUrl',u+'matomo.php']);_paq.push(['setSiteId','1']);var d=document,g=d.createElement('script'),s=d.getElementsByTagName('script')[0];g.async=true;g.src=u+'matomo.js';s.parentNode.insertBefore(g,s);})();</script>"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "2"
+        ],
+        "tagFiringOption": "ONCE_PER_EVENT",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        }
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "60",
+        "name": "Display network - Pixel",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>(function(){var i=new Image();i.src='https://pixel.display-network-example.net/t?id=000000&e=view';})();</script>"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "7"
+        ],
+        "tagFiringOption": "ONCE_PER_EVENT",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        },
+        "blockingTriggerId": [
+          "8"
+        ]
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "tagId": "70",
+        "name": "Legacy affiliate pixel",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>/* legacy affiliate pixel */</script>"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "firingTriggerId": [
+          "2"
+        ],
+        "tagFiringOption": "ONCE_PER_EVENT",
+        "monitoringMetadata": {
+          "type": "MAP"
+        },
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        },
+        "paused": true
+      }
+    ],
+    "trigger": [
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "triggerId": "1",
+        "name": "Consent Initialization - All Pages",
+        "type": "CONSENT_INIT",
+        "fingerprint": "1700000000000"
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "triggerId": "2",
+        "name": "All Pages",
+        "type": "PAGEVIEW",
+        "fingerprint": "1700000000000"
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "triggerId": "3",
+        "name": "CE - purchase",
+        "type": "CUSTOM_EVENT",
+        "fingerprint": "1700000000000",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "purchase"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "triggerId": "4",
+        "name": "CE - purchase + marketing consent",
+        "type": "CUSTOM_EVENT",
+        "fingerprint": "1700000000000",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "purchase"
+              }
+            ]
+          }
+        ],
+        "filter": [
+          {
+            "type": "CONTAINS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{Cookie CMP}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "marketing:true"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "triggerId": "5",
+        "name": "Marketing consent denied",
+        "type": "CUSTOM_EVENT",
+        "fingerprint": "1700000000000",
+        "customEventFilter": [
+          {
+            "type": "MATCH_REGEX",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": ".*"
+              }
+            ]
+          }
+        ],
+        "filter": [
+          {
+            "type": "CONTAINS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{Cookie CMP}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "marketing:true"
+              },
+              {
+                "type": "BOOLEAN",
+                "key": "negate",
+                "value": "true"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "triggerId": "7",
+        "name": "CE - cmp_update + marketing granted",
+        "type": "CUSTOM_EVENT",
+        "fingerprint": "1700000000000",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "cmp_update"
+              }
+            ]
+          }
+        ],
+        "filter": [
+          {
+            "type": "CONTAINS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{Cookie CMP}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "marketing:true"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "triggerId": "8",
+        "name": "Blocker - marketing granted",
+        "type": "CUSTOM_EVENT",
+        "fingerprint": "1700000000000",
+        "customEventFilter": [
+          {
+            "type": "MATCH_REGEX",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": ".*"
+              }
+            ]
+          }
+        ],
+        "filter": [
+          {
+            "type": "CONTAINS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{Cookie CMP}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "marketing:true"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "variable": [
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "variableId": "1",
+        "name": "Cookie CMP",
+        "type": "k",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "decodeCookie",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "cmp_consent"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "formatValue": {}
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "variableId": "2",
+        "name": "DL - order value",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "ecommerce.value"
+          }
+        ],
+        "fingerprint": "1700000000000",
+        "formatValue": {}
+      }
+    ],
+    "builtInVariable": [
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "type": "PAGE_URL",
+        "name": "Page URL"
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "type": "PAGE_HOSTNAME",
+        "name": "Page Hostname"
+      },
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "type": "EVENT",
+        "name": "Event"
+      }
+    ],
+    "fingerprint": "1700000000000",
+    "tagManagerUrl": "https://tagmanager.google.com/#/versions/accounts/0000000000/containers/0000000/",
+    "customTemplate": [
+      {
+        "accountId": "0000000000",
+        "containerId": "0000000",
+        "templateId": "ABC12",
+        "name": "Meta Pixel",
+        "fingerprint": "1700000000000",
+        "templateData": "___INFO___\n{\"displayName\": \"Meta Pixel\", \"type\": \"TAG\"}\n___WEB_PERMISSIONS___\n[{\"instance\": {\"key\": {\"publicId\": \"inject_script\"}}}]",
+        "galleryReference": {
+          "host": "github.com",
+          "owner": "example-vendor",
+          "repository": "gtm-template-meta-pixel",
+          "version": "0000000",
+          "signature": "0000"
+        }
+      }
+    ]
+  }
+}

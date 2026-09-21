@@ -1,0 +1,350 @@
+{
+  "idcontainer": "AbCdEfGh",
+  "idsite": 1,
+  "context": "web",
+  "name": "Default Container",
+  "description": "",
+  "ignoreGtmDataLayer": 1,
+  "activelySyncGtmDataLayer": 0,
+  "isTagFireLimitAllowedInPreviewMode": 0,
+  "created_date": "2026-01-01 09:00:00",
+  "updated_date": "2026-01-10 10:00:00",
+  "created_date_pretty": "Jan 1, 2026 10:00:00",
+  "updated_date_pretty": "Jan 10, 2026 11:00:00",
+  "revision": 7,
+  "version": {
+    "name": "Example version",
+    "description": "",
+    "revision": 7,
+    "created_date": "2026-01-10 10:00:00",
+    "created_date_pretty": "Jan 10, 2026 11:00:00",
+    "updated_date": "2026-01-10 10:00:00",
+    "updated_date_pretty": "Jan 10, 2026 11:00:00"
+  },
+  "tags": [
+    {
+      "idtag": 201,
+      "type": "CustomHtml",
+      "name": "Consent - setConsentGiven",
+      "description": "",
+      "status": "active",
+      "parameters": {
+        "customHtml": "<script>_paq.push(['setConsentGiven']);</script>",
+        "htmlPosition": "bodyStart"
+      },
+      "fire_trigger_ids": [
+        102
+      ],
+      "block_trigger_ids": [],
+      "fire_limit": "unlimited",
+      "priority": 999,
+      "fire_delay": 0,
+      "start_date": null,
+      "end_date": null,
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtag": 202,
+      "type": "Matomo",
+      "name": "MTM - Page view",
+      "description": "",
+      "status": "active",
+      "parameters": {
+        "matomoConfig": "{{configMtm}}",
+        "trackingType": "pageview",
+        "idGoal": "",
+        "goalCustomRevenue": "",
+        "documentTitle": "",
+        "customUrl": "",
+        "isEcommerceView": false,
+        "customDimensions": [],
+        "areCustomDimensionsSticky": false
+      },
+      "fire_trigger_ids": [
+        101
+      ],
+      "block_trigger_ids": [],
+      "fire_limit": "unlimited",
+      "priority": 999,
+      "fire_delay": 0,
+      "start_date": null,
+      "end_date": null,
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtag": 203,
+      "type": "Matomo",
+      "name": "MTM - Purchase",
+      "description": "",
+      "status": "active",
+      "parameters": {
+        "matomoConfig": "{{configMtm}}",
+        "trackingType": "event",
+        "idGoal": "",
+        "goalCustomRevenue": "",
+        "documentTitle": "",
+        "customUrl": "",
+        "isEcommerceView": false,
+        "eventCategory": "Ecommerce",
+        "eventAction": "Purchase",
+        "eventName": "Confirmation",
+        "eventValue": "",
+        "customDimensions": [],
+        "areCustomDimensionsSticky": false
+      },
+      "fire_trigger_ids": [
+        104
+      ],
+      "block_trigger_ids": [],
+      "fire_limit": "unlimited",
+      "priority": 999,
+      "fire_delay": 0,
+      "start_date": null,
+      "end_date": null,
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtag": 204,
+      "type": "Matomo",
+      "name": "MTM - Outbound link click",
+      "description": "",
+      "status": "active",
+      "parameters": {
+        "matomoConfig": "{{configMtm}}",
+        "trackingType": "event",
+        "idGoal": "",
+        "goalCustomRevenue": "",
+        "documentTitle": "",
+        "customUrl": "",
+        "isEcommerceView": false,
+        "eventCategory": "Links",
+        "eventAction": "Outbound",
+        "eventName": "{{PageUrl}}",
+        "eventValue": "",
+        "customDimensions": [],
+        "areCustomDimensionsSticky": false
+      },
+      "fire_trigger_ids": [
+        103
+      ],
+      "block_trigger_ids": [
+        105
+      ],
+      "fire_limit": "unlimited",
+      "priority": 999,
+      "fire_delay": 0,
+      "start_date": null,
+      "end_date": null,
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtag": 205,
+      "type": "Matomo",
+      "name": "MTM - Old page view",
+      "description": "",
+      "status": "paused",
+      "parameters": {
+        "matomoConfig": "{{configMtm}}",
+        "trackingType": "pageview",
+        "idGoal": "",
+        "goalCustomRevenue": "",
+        "documentTitle": "",
+        "customUrl": "",
+        "isEcommerceView": false,
+        "customDimensions": [],
+        "areCustomDimensionsSticky": false
+      },
+      "fire_trigger_ids": [
+        101
+      ],
+      "block_trigger_ids": [],
+      "fire_limit": "unlimited",
+      "priority": 999,
+      "fire_delay": 0,
+      "start_date": null,
+      "end_date": null,
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtag": 206,
+      "type": "Matomo",
+      "name": "MTM - Promo banner (campaign)",
+      "description": "",
+      "status": "active",
+      "parameters": {
+        "matomoConfig": "{{configMtm}}",
+        "trackingType": "event",
+        "idGoal": "",
+        "goalCustomRevenue": "",
+        "documentTitle": "",
+        "customUrl": "",
+        "isEcommerceView": false,
+        "eventCategory": "Promo",
+        "eventAction": "View",
+        "eventName": "Banner",
+        "eventValue": "",
+        "customDimensions": [],
+        "areCustomDimensionsSticky": false
+      },
+      "fire_trigger_ids": [
+        101
+      ],
+      "block_trigger_ids": [],
+      "fire_limit": "unlimited",
+      "priority": 999,
+      "fire_delay": 0,
+      "start_date": "2025-11-01 00:00:00",
+      "end_date": "2025-12-31 23:59:59",
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    }
+  ],
+  "triggers": [
+    {
+      "idtrigger": 101,
+      "type": "PageView",
+      "name": "All pages",
+      "description": "",
+      "parameters": [],
+      "conditions": [],
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtrigger": 102,
+      "type": "CustomEvent",
+      "name": "DL - consent granted",
+      "description": "",
+      "parameters": {
+        "eventName": "cmp_consent_granted"
+      },
+      "conditions": [],
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtrigger": 103,
+      "type": "AllLinksClick",
+      "name": "Outbound link clicks",
+      "description": "",
+      "parameters": [],
+      "conditions": [
+        {
+          "comparison": "not_regexp",
+          "actual": "ClickDestinationUrl",
+          "expected": "example-shop\\.com"
+        }
+      ],
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtrigger": 104,
+      "type": "CustomEvent",
+      "name": "DL - purchase",
+      "description": "",
+      "parameters": {
+        "eventName": "purchase"
+      },
+      "conditions": [],
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idtrigger": 105,
+      "type": "CustomEvent",
+      "name": "Blocker - analytics consent denied",
+      "description": "",
+      "parameters": {
+        "eventName": "cmp_consent_update"
+      },
+      "conditions": [
+        {
+          "comparison": "not_regexp",
+          "actual": "JS - CMP cookie",
+          "expected": "analytics:true"
+        }
+      ],
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    }
+  ],
+  "variables": [
+    {
+      "idvariable": 301,
+      "type": "MatomoConfiguration",
+      "name": "configMtm",
+      "description": "",
+      "parameters": {
+        "matomoUrl": "https://analytics.example.org/",
+        "idSite": "1",
+        "enableLinkTracking": false,
+        "enableFormAnalytics": false,
+        "enableMediaAnalytics": false,
+        "enableFileTracking": false,
+        "enableCrossDomainLinking": false,
+        "enableDoNotTrack": true,
+        "disableCookies": false,
+        "requireConsent": true,
+        "requireCookieConsent": false,
+        "setSecureCookie": true,
+        "cookieDomain": "*.example-shop.com",
+        "cookieNamePrefix": "_pk_",
+        "setConsentGiven": false,
+        "rememberConsentGiven": true,
+        "rememberConsentGivenForHours": "8760",
+        "forgetConsentGiven": false,
+        "jsEndpoint": "matomo.js",
+        "trackingEndpoint": "matomo.php"
+      },
+      "lookup_table": [],
+      "default_value": "",
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    },
+    {
+      "idvariable": 302,
+      "type": "CustomJsFunction",
+      "name": "JS - CMP cookie",
+      "description": "",
+      "parameters": {
+        "jsFunction": "function () { var m = document.cookie.match(/cmp_consent=([^;]+)/); return m ? m[1] : ''; }"
+      },
+      "lookup_table": [],
+      "default_value": "",
+      "created_date": "2026-01-10 10:00:00",
+      "updated_date": "2026-01-10 10:00:00",
+      "created_date_pretty": "Jan 10, 2026 11:00:00",
+      "updated_date_pretty": "Jan 10, 2026 11:00:00"
+    }
+  ]
+}
