@@ -26,5 +26,3 @@ To find the file: open the browser DevTools Network tab, reload the page and fil
 A three-sheet workbook (**Summary**, **Tags**, **Consent & Findings**) and a short summary in the chat. Both follow the language of your conversation.
 
 ⚠️ This is a static reading: confirm findings in each tool's Preview/Debug mode on the live site. Consent is often handled by the cookie banner rather than the tag manager, hence the asterisks in the workbook.
-
-Details on modes, limits and formats: see [`gtm-tag-audit/README.md`](gtm-tag-audit/README.md).
