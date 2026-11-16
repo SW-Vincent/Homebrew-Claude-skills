@@ -237,8 +237,8 @@ Signs: tags that call `gtag('consent','default', ...)` then `gtag('consent','upd
 (Custom HTML, or a CMP template such as OneTrust, Didomi, Axeptio). Note `ad_storage`,
 `analytics_storage`, `ad_user_data`, `ad_personalization`, `wait_for_update`, `url_passthrough`,
 `ads_data_redaction`. Then check whether the Google tags are subject to consent, through a native
-setting (`consentSettings` in the export; in the client code, a non-`vtp_` key in `other_keys` of
-the script output) or through a trigger or blocker condition that reads the CMP cookie (more
+setting (`consentSettings` in the export; in the client code, the `consent` key of the tag: the
+script output gives both as `consent_native`, with the consent types required) or through a trigger or blocker condition that reads the CMP cookie (more
 fragile, to flag). Verdict, per product:
 
 - **Basic**: signals present AND Google tags not fired before consent.

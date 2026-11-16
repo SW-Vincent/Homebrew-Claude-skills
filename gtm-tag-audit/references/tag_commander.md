@@ -167,5 +167,13 @@ another domain is an anomaly to flag.
 
 The file may contain UTF-8 text read twice as latin-1: `téléphone` appears as `tÃ©lÃ©phone`.
 Marker: presence of `Ã©`, `Ã¨`, `Ã `. Repair: `text.encode('latin-1').decode('utf-8')`.
-`extract_container.py` does it on tag and trigger names. Apostrophes in names are escaped (`\'`) in
-the code. The example file keeps one French trigger name on purpose, to demonstrate this defect.
+`extract_container.py` does it on tag and trigger names (capital letters included: `Ã‰` for `É`).
+Apostrophes in names are escaped (`\'`) in the code. A name that contains a double quote is written
+in single quotes in `launchTag` (`tC.launchTag(256,'Click "Send"',...)`): seen on a real container,
+handled by the script.
+
+The same defect can affect a **value tested in a scope** (`"prÃ©contractuel"==tc_vars.step`). The
+script shows it repaired in `scope`, keeps it as compiled in `scope_raw` and lists the tags in a
+`Note`. Do not decide alone: either the file was re-encoded when it was saved, or the container
+really compares with the broken value and the condition may never match. Flag it as a point to
+check on the live site. The example file keeps one French trigger name on purpose, to demonstrate this defect.

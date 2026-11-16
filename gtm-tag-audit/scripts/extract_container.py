@@ -17,6 +17,7 @@ Usage:
 
   --out    write the resolved view (meta, tags, triggers, source limits)
   --raw    also write the raw extracted object (GTM/MTM) or the TC indexes
+           (use it to read a custom HTML or a JS variable in full)
   --table  print one compact line per tag (for direct reading)
   --all    include GTM infrastructure tags (__tg, __hl, __lcl, __cl...); excluded
            by default because they do not exist in interface exports
@@ -68,13 +69,38 @@ def balanced_json(text, start):
     raise ValueError("unbalanced braces (file truncated?)")
 
 
+def js_block_end(text, start):
+    """Index of the '}' closing the block whose opening '{' is just before text[start].
+    Skips '...' and "..." strings. Returns -1 if the block never closes."""
+    depth, quote, esc = 1, None, False
+    for i in range(start, len(text)):
+        c = text[i]
+        if quote:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == quote:
+                quote = None
+        elif c in "\"'":
+            quote = c
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
 def fix_mojibake(s):
     """Repairs UTF-8 text that was read twice as latin-1 (e.g. 'tÃ©lÃ©phone')."""
     if isinstance(s, str) and ("Ã" in s or "Â" in s):
-        try:
-            return s.encode("latin-1").decode("utf-8")
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            return s
+        for enc in ("cp1252", "latin-1"):  # cp1252 first: 'É' read twice gives 'Ã‰', which latin-1 cannot encode
+            try:
+                return s.encode(enc).decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
     return s
 
 
@@ -90,6 +116,130 @@ def hosts_in(text, limit=8):
         if h not in seen:
             seen.append(h)
     return seen[:limit]
+
+
+# ---------------------------------------------------------------------- signals
+# Three cross-cutting questions, answered from the text of each tag (never from the tool's own
+# runtime library, which contains every keyword): does it send hits to a server-side tagging
+# endpoint, does it send user-provided data (enhanced conversions, advanced matching), and does
+# it drive a vendor consent API other than a plain block. Each entry: (label, regex); a %s in the
+# label receives the first captured group.
+Q = r"""\\?['"]"""  # a quote, possibly escaped
+SIGNAL_PATTERNS = {
+    "server_side": [
+        ("server_container_url = %s", r"server_container_url" + Q + r"?\s*[:,=]\s*" + Q + r"?([^'\"\\,}\s]+)"),
+        ("transport_url = %s", r"transport_url" + Q + r"?\s*[:,=]\s*" + Q + r"?([^'\"\\,}\s]+)"),
+        ("first_party_collection flag", r"first_party_collection"),
+        ("Commanders Act event API cact('trigger', '%s') (server-side platform, to confirm)",
+         r"cact\(\s*" + Q + r"trigger" + Q + r"\s*,\s*" + Q + r"([\w.-]+)"),
+        ("Meta eventID present: deduplication with a server-side event (Conversions API) is probable",
+         r"fbq\([^)]{0,300}\beventID\b"),
+    ],
+    "user_data": [
+        ("gtag user_data set in code", r"gtag\(\s*" + Q + r"set" + Q + r"\s*,\s*" + Q + r"user_data"),
+        ("user_data parameter in code", r"[{,]\s*" + Q + r"?user_data" + Q + r"?\s*:"),
+        ("enhanced_conversion_data variable", r"enhanced_conversion_data"),
+        ("allow_enhanced_conversions flag", r"allow_enhanced_conversions"),
+        ("Meta advanced matching: fbq init with user fields (%s)",
+         r"fbq\(\s*" + Q + r"init" + Q + r"\s*,[^)]{0,80}[{,]\s*" + Q + r"?(em|ph|fn|ln|external_id)" + Q + r"?\s*:"),
+        ("TikTok ttq.identify (user data)", r"ttq\.identify\("),
+        ("Microsoft UET enhanced conversions: uetq set pid", r"uetq\.push\(\s*" + Q + r"set" + Q + r"\s*,\s*\{\s*" + Q + r"?pid"),
+    ],
+    "consent_api": [
+        ("Google Consent Mode: gtag consent %s", r"gtag\(\s*" + Q + r"consent" + Q + r"\s*,\s*" + Q + r"(default|update)"),
+        ("Microsoft UET consent mode: uetq consent %s",
+         r"uetq\.push\(\s*" + Q + r"consent" + Q + r"\s*,\s*" + Q + r"(default|update)"),
+        ("Meta consent API: fbq consent %s", r"fbq\(\s*" + Q + r"consent" + Q + r"\s*,\s*" + Q + r"(revoke|grant)"),
+        ("Meta Limited Data Use: dataProcessingOptions", r"dataProcessingOptions"),
+        ("Piano Analytics consent mode: pa.consent.setMode(%s)", r"pa\.consent\.setMode\(\s*" + Q + r"([\w-]+)"),
+        ("Piano Analytics privacy mode (older API): pa.privacy.setMode(%s)", r"pa\.privacy\.setMode\(\s*" + Q + r"([\w-]+)"),
+        ("Piano consent by purpose: %s", r"((?:pa|tp)\.consent\.setByPurpose)"),
+        ("TikTok consent API: ttq.%sConsent", r"ttq\.(hold|grant|revoke)Consent"),
+        ("Pinterest consent API: pintrk setconsent", r"pintrk\(\s*" + Q + r"setconsent"),
+        ("Microsoft Clarity consent API", r"clarity\(\s*" + Q + r"consent"),
+        ("Matomo consent API: %s",
+         Q + r"(requireConsent|requireCookieConsent|setConsentGiven|setCookieConsentGiven|rememberConsentGiven|"
+             r"rememberCookieConsentGiven|forgetConsentGiven|forgetCookieConsentGiven)" + Q),
+    ],
+}
+SIGNAL_RE = {cat: [(label, re.compile(rx)) for label, rx in items] for cat, items in SIGNAL_PATTERNS.items()}
+CONSENT_KEY_RE = re.compile(r"consent|ldu|dpo|_storage$|wait_for_update|url_?passthrough|ads_?data_?redaction", re.I)
+MATCHING_KEY_RE = re.compile(r"advanced.?matching|edvanced.?matching|enhanced.?conversion", re.I)
+
+
+def leaves(obj):
+    """Every string found in a nested structure, one per line: the text signals are searched in."""
+    out = []
+
+    def walk(v):
+        if isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                walk(x)
+        elif isinstance(v, str):
+            out.append(v)
+    walk(obj)
+    return "\n".join(out)
+
+
+def scan_signals(text):
+    """{category: [labels]} for the patterns found in a tag's own text."""
+    found = {}
+    for cat, items in SIGNAL_RE.items():
+        for label, rx in items:
+            for m in rx.finditer(text or ""):
+                value = label % m.group(1) if "%s" in label else label
+                if value not in found.setdefault(cat, []):
+                    found[cat].append(value)
+    return found
+
+
+def add_signal(row, cat, label):
+    sig = row.setdefault("signals", {})
+    if label not in sig.setdefault(cat, []):
+        sig[cat].append(label)
+
+
+def merge_signals(row, found):
+    for cat, labels in found.items():
+        for label in labels:
+            add_signal(row, cat, label)
+
+
+def setting_signals(row, scalars):
+    """Signals read from a tag's own settings (name -> scalar value), whatever the template."""
+    consent = ["%s=%s" % (k, scalars[k]) for k in sorted(scalars) if CONSENT_KEY_RE.search(k)]
+    if consent:
+        add_signal(row, "consent_api", "consent-related settings of the tag: " + short(", ".join(consent), 260))
+    for k in sorted(scalars):
+        if MATCHING_KEY_RE.search(k) and str(scalars[k]).lower() == "true":
+            add_signal(row, "user_data", "setting %s = true" % k)
+
+
+def google_routing(rows, server_map):
+    """Second pass on Google tags: which GA4 events inherit the server endpoint of their Google tag.
+    rows: [(row, kind, measurement_id, endpoint or None, pairs, extras)]"""
+    by_id = {}
+    for row, kind, mid, endpoint, pairs, extras in rows:
+        if kind == "googtag" and endpoint:
+            by_id.setdefault(mid, (endpoint, row["id"]))
+            entry = server_map.setdefault(endpoint, {"endpoint": endpoint, "declared_by": [], "measurement_ids": [],
+                                                     "hits": []})
+            entry["declared_by"].append(row["id"])
+            if mid not in entry["measurement_ids"]:
+                entry["measurement_ids"].append(mid)
+            add_signal(row, "server_side", "Google tag sends its hits to the server endpoint %s" % endpoint)
+            entry["hits"].append({"tag_id": row["id"], "event": "(Google tag: page_view and automatic events unless "
+                                  "disabled)", "parameters": dict(pairs), **extras})
+    for row, kind, mid, endpoint, pairs, extras in rows:
+        if kind == "gaawe" and mid in by_id:
+            endpoint, parent = by_id[mid]
+            add_signal(row, "server_side", "GA4 event routed to the server endpoint %s (inherits from Google tag %s)"
+                       % (endpoint, parent))
+            server_map[endpoint]["hits"].append({"tag_id": row["id"], "event": extras.pop("event", None),
+                                                 "parameters": dict(pairs), **extras})
 
 
 # -------------------------------------------------------------------- detection
@@ -108,7 +258,7 @@ def detect(text):
                 return ("MTM", "interface export"), d
     if "MatomoTagManager.addContainer(" in text:
         return ("MTM", "client code"), None
-    if re.search(r'var data = \s*\{\s*"resource"', text) or "google_tag_manager" in text[:600]:
+    if re.search(r'var data = \s*\{\s*"resource"', text):
         return ("GTM", "client code"), None
     if "tagContainer Generator" in text[:600] or re.search(r"tC\.container_\d+_\d+", text):
         return ("Tag Commander", "client code"), None
@@ -120,8 +270,40 @@ GTM_OPS = {"_eq": "=", "_cn": "contains", "_sw": "starts with", "_ew": "ends wit
            "_lt": "<", "_le": "<=", "_gt": ">", "_ge": ">=", "_css": "CSS selector", "_um": "URL matches"}
 
 
-def _gtm_macro_desc(m):
+def _gtm_pairs(v):
+    """['list', ['map', 'key', K, 'value', V], ...] -> [(K, V), ...]"""
+    out = []
+    if isinstance(v, list) and v and v[0] == "list":
+        for row in v[1:]:
+            if isinstance(row, list) and row and row[0] == "map":
+                d = dict(zip(row[1::2], row[2::2]))
+                out.append((d.get("key"), d.get("value")))
+    return out
+
+
+def _gtm_macro_desc(m, macros=None, depth=0):
     f = m.get("function", "")
+    sub = macros if depth < 3 else None  # nested variables, bounded to avoid cycles
+
+    def r(v):
+        return _gtm_render(v, sub, depth + 1)
+
+    if f in ("__smm", "__remm"):
+        kind = "lookup" if f == "__smm" else "regex-table"
+        pairs = ", ".join("%s=>%s" % (r(k), r(v)) for k, v in _gtm_pairs(m.get("vtp_map")))
+        default = " ; default=%s" % r(m.get("vtp_defaultValue")) if "vtp_defaultValue" in m else ""
+        return short("%s(%s : %s%s)" % (kind, r(m.get("vtp_input")), pairs, default), 220)
+    if f == "__j":
+        return "JS variable:%s" % m.get("vtp_name")
+    if f == "__d":
+        return "DOM:%s" % (m.get("vtp_elementId") or m.get("vtp_elementSelector"))
+    if f == "__gas":
+        return "GA settings (Universal Analytics):%s" % r(m.get("vtp_trackingId"))
+    if f == "__awec":
+        fields = ", ".join("%s=%s" % (k[4:], r(v)) for k, v in sorted(m.items())
+                           if k.startswith("vtp_") and k not in ("vtp_mode", "vtp_isAutoCollectPiiEnabledFlag"))
+        return short("user-provided data (mode=%s%s%s)" % (
+            m.get("vtp_mode"), ": " if fields else "", fields), 220)
     if f == "__v":
         return "dataLayer:%s" % m.get("vtp_name")
     if f == "__u":
@@ -135,7 +317,7 @@ def _gtm_macro_desc(m):
     if f == "__k":
         return "cookie:%s" % m.get("vtp_name")
     if f == "__jsm":
-        return "JS:" + short(_gtm_render(m.get("vtp_javascript"), None), 70)
+        return "JS:" + short(r(m.get("vtp_javascript")), 70)
     if f == "__aev":
         return "auto-event:%s" % m.get("vtp_varType")
     if f.startswith("__cvt_"):
@@ -143,18 +325,78 @@ def _gtm_macro_desc(m):
     return f
 
 
-def _gtm_render(v, macros):
+def _gtm_render(v, macros, depth=0):
     if isinstance(v, list) and v:
         if v[0] == "macro" and len(v) > 1:
             if macros is not None and isinstance(v[1], int) and v[1] < len(macros):
-                return "{{%s}}" % _gtm_macro_desc(macros[v[1]])
+                return "{{%s}}" % _gtm_macro_desc(macros[v[1]], macros, depth)
             return "{{m%s}}" % v[1]
         if v[0] == "template":
-            return "".join(_gtm_render(x, macros) for x in v[1:])
+            return "".join(_gtm_render(x, macros, depth) for x in v[1:])
         if v[0] == "escape":
-            return _gtm_render(v[1], macros)
-        return "[" + ",".join(_gtm_render(x, macros) for x in v) + "]"
+            return _gtm_render(v[1], macros, depth)
+        return "[" + ",".join(_gtm_render(x, macros, depth) for x in v) + "]"
     return str(v)
+
+
+def _gtm_tag_refs(v, tags):
+    """['list', ['tag', index, option], ...] -> tag_ids of the tags fired before / after."""
+    out = []
+    if isinstance(v, list):
+        for x in v[1:] if v and v[0] == "list" else [v]:
+            if isinstance(x, list) and len(x) > 1 and x[0] == "tag" and isinstance(x[1], int) and x[1] < len(tags):
+                out.append(str(tags[x[1]].get("tag_id")))
+    return out
+
+
+def _gtm_param_pairs(v, macros, depth=0, seen=None):
+    """Every (parameter, value) row of the settings tables found in a value, following the variables
+    it references (a 'Google tag: configuration / event settings' variable holds such a table)."""
+    out = []
+    seen = set() if seen is None else seen
+    if isinstance(v, dict):
+        for x in v.values():
+            out += _gtm_param_pairs(x, macros, depth, seen)
+    elif isinstance(v, list) and v:
+        if v[0] == "map":
+            d = dict(zip(v[1::2], v[2::2]))
+            name = d.get("parameter", d.get("name"))
+            if isinstance(name, str) and ("parameterValue" in d or "value" in d):
+                out.append((name, short(_gtm_render(d.get("parameterValue", d.get("value")), macros), 160)))
+                return out
+        if v[0] == "macro" and len(v) > 1 and isinstance(v[1], int) and v[1] < len(macros) and depth < 3:
+            if v[1] not in seen:
+                seen.add(v[1])
+                out += _gtm_param_pairs(macros[v[1]], macros, depth + 1, seen)
+            return out
+        for x in v[1:]:
+            out += _gtm_param_pairs(x, macros, depth, seen)
+    return out
+
+
+def _gtm_macro_closure(v, macros, acc, depth=0):
+    """Indexes of the variables a value references, directly or through other variables."""
+    if isinstance(v, dict):
+        for x in v.values():
+            _gtm_macro_closure(x, macros, acc, depth)
+    elif isinstance(v, list) and v:
+        if v[0] == "macro" and len(v) > 1 and isinstance(v[1], int) and v[1] < len(macros):
+            if v[1] not in acc and depth < 4:
+                acc.add(v[1])
+                _gtm_macro_closure(macros[v[1]], macros, acc, depth + 1)
+            return
+        for x in v:
+            _gtm_macro_closure(x, macros, acc, depth)
+
+
+def _google_extras(get, pairs, user_data_desc):
+    """Common description of what a Google tag carries besides its event parameters."""
+    extras = {}
+    if str(get("sendEcommerceData")).lower() == "true":
+        extras["ecommerce"] = "ecommerce data sent (source: %s)" % (get("getEcommerceDataFrom") or "dataLayer")
+    if "user_data" in dict(pairs):
+        extras["user_data"] = user_data_desc or dict(pairs)["user_data"]
+    return extras
 
 
 def gtm_client(text, include_infra):
@@ -168,7 +410,8 @@ def gtm_client(text, include_infra):
     def pred_text(k):
         p = preds[k]
         op = GTM_OPS.get(p.get("function"), p.get("function"))
-        return "%s %s %s" % (_gtm_render(p.get("arg0"), macros), op, _gtm_render(p.get("arg1"), macros))
+        return "%s %s %s%s" % (_gtm_render(p.get("arg0"), macros), op, _gtm_render(p.get("arg1"), macros),
+                               " (case-insensitive)" if p.get("ignore_case") else "")
 
     firing = {j: [] for j in range(len(tags))}
     blocking = {j: [] for j in range(len(tags))}
@@ -184,7 +427,7 @@ def gtm_client(text, include_infra):
         for t in clauses.get("block", []):
             blocking[t].append(cond)
 
-    out_tags, infra = [], 0
+    out_tags, infra, google_rows, server_map = [], 0, [], {}
     for j, t in enumerate(tags):
         f = t.get("function", "")
         if f in GTM_INFRA:
@@ -197,13 +440,47 @@ def gtm_client(text, include_infra):
                "params": {k[4:]: short(_gtm_render(v, macros), 300) for k, v in t.items() if k.startswith("vtp_")},
                "firing": firing[j], "blocking": blocking[j],
                "once": "once_per_load" if t.get("once_per_load") else ("once_per_event" if t.get("once_per_event") else "unlimited"),
+               # native per-tag consent ("Additional consent checks"): list of required consent types
+               "consent_native": [x for x in t["consent"][1:]] if isinstance(t.get("consent"), list) else None,
+               "setup_tags": _gtm_tag_refs(t.get("setup_tags"), tags),
+               "teardown_tags": _gtm_tag_refs(t.get("teardown_tags"), tags),
+               "priority": t.get("priority"),
                "other_keys": sorted(k for k in t if not k.startswith("vtp_")
-                                    and k not in ("function", "tag_id", "once_per_load", "once_per_event", "metadata"))}
+                                    and k not in ("function", "tag_id", "once_per_load", "once_per_event", "metadata",
+                                                  "consent", "setup_tags", "teardown_tags", "priority"))}
         if f == "__paused":
             row["original_type"] = t.get("vtp_originalTagType")
         if f == "__html":
             row["hosts"] = hosts_in(str(_gtm_render(t.get("vtp_html"), None)))
+        # signals: searched in the tag's own text and in the variables it references
+        refs = set()
+        _gtm_macro_closure(t, macros, refs)
+        merge_signals(row, scan_signals(leaves(t) + "\n" + leaves([macros[n] for n in sorted(refs)])))
+        setting_signals(row, {k[4:]: v for k, v in t.items() if k.startswith("vtp_") and not isinstance(v, (list, dict))})
+        pairs = _gtm_param_pairs({k: v for k, v in t.items() if k.startswith("vtp_")}, macros)
+        row["event_parameters"] = dict(pairs)
+        awec = [_gtm_macro_desc(macros[n], macros) for n in sorted(refs) if macros[n].get("function") == "__awec"]
+        if awec:
+            add_signal(row, "user_data", "sends %s" % "; ".join(awec))
+        if f == "__awud":
+            add_signal(row, "user_data", "Google Ads user-provided data event (enhanced conversions for leads)")
+        if f in ("__googtag", "__gaawc", "__gaawe"):
+            get = lambda k: t.get("vtp_" + k)
+            params = dict(pairs)
+            endpoint = params.get("server_container_url") or params.get("transport_url")
+            mid = _gtm_render(get("tagId") or get("measurementId") or get("measurementIdOverride"), macros)
+            extras = _google_extras(get, pairs, "; ".join(awec))
+            if f == "__gaawe":
+                extras["event"] = _gtm_render(get("eventName"), macros)
+            google_rows.append((row, "gaawe" if f == "__gaawe" else "googtag", mid, endpoint, pairs, extras))
+        elif str(t.get("vtp_enableTransportUrl")).lower() == "true" and t.get("vtp_transportUrl"):
+            endpoint = _gtm_render(t.get("vtp_transportUrl"), macros)
+            add_signal(row, "server_side", "tag sends its hits to the server endpoint %s" % endpoint)
+            server_map.setdefault(endpoint, {"endpoint": endpoint, "declared_by": [], "measurement_ids": [],
+                                             "hits": []})["hits"].append(
+                {"tag_id": row["id"], "event": f, "parameters": dict(pairs)})
         out_tags.append(row)
+    google_routing(google_rows, server_map)
 
     perms = data.get("permissions", {})
     for row in out_tags:
@@ -214,7 +491,8 @@ def gtm_client(text, include_infra):
              "%d GTM infrastructure tags (listeners, trigger groups) %s." %
              (infra, "included" if include_infra else "excluded from the view")]
     meta = {"container_version": r.get("version"), "tags_total": len(tags), "tags_infrastructure": infra,
-            "macros": len(macros), "predicates": len(preds), "rules": len(rules)}
+            "macros": len(macros), "predicates": len(preds), "rules": len(rules),
+            "_server_side": list(server_map.values())}
     return meta, out_tags, [], notes, data
 
 
@@ -235,9 +513,39 @@ def _gtm_filter_text(f):
     return "%s%s %s %s" % ("NOT " if neg else "", args.get("arg0"), f.get("type"), args.get("arg1"))
 
 
+def _export_pairs(params, variables, depth=0, seen=None):
+    """Same as _gtm_param_pairs for an interface export: rows of the settings tables, following
+    the {{Variable}} references."""
+    out = []
+    seen = set() if seen is None else seen
+    for p in params or []:
+        if p.get("type") == "MAP":
+            d = {x.get("key"): x.get("value") for x in p.get("map", [])}
+            name = d.get("parameter", d.get("name"))
+            if name is not None and ("parameterValue" in d or "value" in d):
+                out.append((name, d.get("parameterValue", d.get("value"))))
+                continue
+        out += _export_pairs(p.get("list"), variables, depth, seen)
+        out += _export_pairs(p.get("map"), variables, depth, seen)
+        m = re.match(r"^\{\{(.+)\}\}$", str(p.get("value", "")))
+        if m and m.group(1) in variables and m.group(1) not in seen and depth < 3:
+            seen.add(m.group(1))
+            out += _export_pairs(variables[m.group(1)].get("parameter"), variables, depth + 1, seen)
+    return out
+
+
+def _export_refs(obj, variables, acc, depth=0):
+    for name in re.findall(r"\{\{([^{}]+)\}\}", leaves(obj)):
+        if name in variables and name not in acc and depth < 4:
+            acc.add(name)
+            _export_refs(variables[name], variables, acc, depth + 1)
+
+
 def gtm_export(d, include_infra):
     cv = d.get("containerVersion", d)
     trig = {t["triggerId"]: t for t in cv.get("trigger", [])}
+    variables = {v.get("name"): v for v in cv.get("variable", [])}
+    google_rows, server_map = [], {}
 
     def trig_view(tid):
         t = trig.get(tid, {"name": "?", "type": "?"})
@@ -251,14 +559,52 @@ def gtm_export(d, include_infra):
     for t in cv.get("tag", []):
         cs = t.get("consentSettings", {}) or {}
         params = _gtm_params(t.get("parameter"))
-        tags.append({"platform": "GTM", "id": str(t.get("tagId")), "name": t.get("name"), "type": t.get("type"),
+        row = {"platform": "GTM", "id": str(t.get("tagId")), "name": t.get("name"), "type": t.get("type"),
                      "status": "paused" if t.get("paused") else "active",
                      "params": params,
                      "firing": [trig_view(x) for x in t.get("firingTriggerId", [])],
                      "blocking": [trig_view(x) for x in t.get("blockingTriggerId", [])],
                      "once": t.get("tagFiringOption"), "priority": (t.get("priority") or {}).get("value"),
                      "consent_native": cs.get("consentStatus"),
-                     "hosts": hosts_in(str(params.get("html", ""))) if t.get("type") == "html" else []})
+                     "consent_types": [x.get("value") for x in (cs.get("consentType") or {}).get("list", [])],
+                     "setup_tags": [x.get("tagName") for x in t.get("setupTag", [])],
+                     "teardown_tags": [x.get("tagName") for x in t.get("teardownTag", [])],
+                     "hosts": hosts_in(str(params.get("html", ""))) if t.get("type") == "html" else []}
+        refs = set()
+        _export_refs(t.get("parameter"), variables, refs)
+        merge_signals(row, scan_signals(leaves(t.get("parameter")) + "\n"
+                                        + leaves([variables[n].get("parameter") for n in sorted(refs)])))
+        scalars = {p.get("key"): p.get("value") for p in t.get("parameter", []) if "value" in p}
+        setting_signals(row, scalars)
+        pairs = _export_pairs(t.get("parameter"), variables)
+        row["event_parameters"] = dict(pairs)
+        awec = ["%s (%s)" % (n, short(json.dumps(_gtm_params(variables[n].get("parameter")), ensure_ascii=False), 160))
+                for n in sorted(refs) if variables[n].get("type") == "awec"]
+        if awec:
+            add_signal(row, "user_data", "sends user-provided data variable " + "; ".join(awec))
+        typ = t.get("type")
+        if typ == "awud":
+            add_signal(row, "user_data", "Google Ads user-provided data event (enhanced conversions for leads)")
+        if typ in ("googtag", "gaawc", "gaawe") and not t.get("paused"):
+            get = scalars.get
+            pd = dict(pairs)
+            endpoint = pd.get("server_container_url") or pd.get("transport_url")
+            mid = get("tagId") or get("measurementId") or get("measurementIdOverride")
+            m = re.match(r"^\{\{(.+)\}\}$", str(mid))
+            if m and m.group(1) in variables:  # a constant variable holding the measurement ID
+                mid = _gtm_params(variables[m.group(1)].get("parameter")).get("value", mid)
+            extras = _google_extras(get, pairs, "; ".join(awec))
+            if typ == "gaawe":
+                extras["event"] = get("eventName")
+            google_rows.append((row, "gaawe" if typ == "gaawe" else "googtag", mid, endpoint, pairs, extras))
+        elif str(scalars.get("enableTransportUrl")).lower() == "true" and scalars.get("transportUrl"):
+            endpoint = scalars["transportUrl"]
+            add_signal(row, "server_side", "tag sends its hits to the server endpoint %s" % endpoint)
+            server_map.setdefault(endpoint, {"endpoint": endpoint, "declared_by": [], "measurement_ids": [],
+                                             "hits": []})["hits"].append(
+                {"tag_id": row["id"], "event": typ, "parameters": dict(pairs)})
+        tags.append(row)
+    google_routing(google_rows, server_map)
     templates = [{"id": "cvt_" + str(c.get("templateId")), "name": c.get("name"),
                   "gallery": (c.get("galleryReference") or {}).get("repository")} for c in cv.get("customTemplate", [])]
     tviews = [trig_view(k) for k in trig]
@@ -266,8 +612,11 @@ def gtm_export(d, include_infra):
     meta = {"container_public_id": c.get("publicId"), "container_name": c.get("name"),
             "version_id": cv.get("containerVersionId"), "version_name": cv.get("name"),
             "tags_total": len(tags), "triggers": len(trig), "variables": len(cv.get("variable", [])),
-            "custom_templates": templates}
+            "custom_templates": templates, "_server_side": list(server_map.values()),
+            "_variables": [{"id": v.get("variableId"), "name": v.get("name"), "type": v.get("type"),
+                            "params": _gtm_params(v.get("parameter"))} for v in cv.get("variable", [])]}
     notes = ["Interface export: names, triggers, blockers and native consent settings are available.",
+             "What each {{Variable}} reads is in the 'variables' list of the view (--out).",
              "Infrastructure tags (listeners) do not exist in an export: the tag count differs from the client code."]
     return meta, tags, tviews, notes, cv
 
@@ -287,6 +636,10 @@ def _mtm_var_desc(v):
             return "JS:%s" % p.get("variableName")
         if t == "Constant":
             return "constant:%s" % p.get("constantValue")
+        if t == "Cookie":
+            return "cookie:%s" % p.get("cookieName")
+        if t == "DomElement":
+            return "DOM:%s" % (p.get("cssSelector") or p.get("elementId"))
         return t
     return str(v)
 
@@ -320,6 +673,8 @@ def _mtm_tag_row(t, name, trig_view):
         row["hosts"] = hosts_in(str(html))
     else:
         row["params"] = {k: short(v, 200) for k, v in p.items()}
+    merge_signals(row, scan_signals(leaves(t.get("parameters")) if typ != "Matomo" else
+                                    leaves({k: v for k, v in (t.get("parameters") or {}).items() if k != "matomoConfig"})))
     row["firing"] = [trig_view(i) for i in t.get("fireTriggerIds", t.get("fire_trigger_ids", []))]
     row["blocking"] = [trig_view(i) for i in t.get("blockTriggerIds", t.get("block_trigger_ids", []))]
     return row
@@ -389,8 +744,13 @@ def mtm_export(d, include_infra):
             "matomo_configs": [{"name": c["name"], "matomoUrl": c["parameters"].get("matomoUrl"),
                                 "requireConsent": c["parameters"].get("requireConsent"),
                                 "requireCookieConsent": c["parameters"].get("requireCookieConsent"),
-                                "setConsentGiven": c["parameters"].get("setConsentGiven")} for c in cfg]}
-    notes = ["Version export: names, status, schedule dates and trigger references are available."]
+                                "setConsentGiven": c["parameters"].get("setConsentGiven")} for c in cfg],
+            "_variables": [{"id": v.get("idvariable"), "name": v.get("name"), "type": v.get("type"),
+                            "params": {k: short(x, 300) for k, x in (v.get("parameters") or {}).items()},
+                            "lookup_table": v.get("lookup_table") or [], "default_value": v.get("default_value")}
+                           for v in d.get("variables", [])]}
+    notes = ["Version export: names, status, schedule dates and trigger references are available.",
+             "What each {{Variable}} reads is in the 'variables' list of the view (--out)."]
     return meta, tags, [trig_view(k) for k in trig], notes, d
 
 
@@ -464,7 +824,13 @@ def tc_client(text, include_infra):
         trig[int(m.group(2))] = {"id": int(m.group(2)), "kind": "listener",
                                  "name": fix_mojibake(m.group(3).replace("\\'", "'")),
                                  "category": fix_mojibake(m.group(5))}
-    launch_re = re.compile(r'tC\.launchTag\((\d+),"((?:[^"\\]|\\.)*)",(-?\d+),(\d+),(\d+),(\d+)\)')
+    # the name is in double quotes, or in single quotes when it contains a double quote
+    launch_re = re.compile(r"""tC\.launchTag\((\d+),(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'),"""
+                           r"""(-?\d+),(\d+),(\d+),(\d+)\)""")
+
+    def tag_name(m):
+        raw_name = m.group(2) if m.group(2) is not None else m.group(3)
+        return fix_mojibake(raw_name.replace("\\'", "'").replace('\\"', '"'))
 
     def scan(body):
         rows, prev = [], 0
@@ -484,10 +850,12 @@ def tc_client(text, include_infra):
                 raw, mode = prefix[:-3], "run_if_false"
             elif prefix:
                 raw, mode = prefix, "raw"
-            rows.append({"tag_id": int(tid), "name": fix_mojibake(m.group(2).replace("\\'", "'")),
-                         "template_id": int(m.group(3)), "trigger_id": int(m.group(6)),
+            scope = explain_scope(raw, mode) if mode in ("run_if_true", "run_if_false") else short(raw, 200)
+            rows.append({"tag_id": int(tid), "name": tag_name(m),
+                         "template_id": int(m.group(4)), "trigger_id": int(m.group(7)),
                          "scope_raw": raw, "scope_mode": mode,
-                         "scope": explain_scope(raw, mode) if mode in ("run_if_true", "run_if_false") else short(raw, 200)})
+                         # readable form repaired; scope_raw keeps the value exactly as compiled
+                         "scope": fix_mojibake(scope), "scope_encoding_suspect": fix_mojibake(scope) != scope})
         return rows
 
     launches = []
@@ -496,8 +864,13 @@ def tc_client(text, include_infra):
     for n, s0 in enumerate(starts):
         e0 = starts[n + 1] if n + 1 < len(starts) else (ev_pos if ev_pos > 0 else s0 + 20000)
         launches.extend(scan(text[s0:e0]))
-    for m in re.finditer(r"tC\.event\.(\w+?)ListFunctions\.push\(\(function\(t,e\)\{", text):
-        end = text.find("}))", m.end())
+    handlers = list(re.finditer(r"tC\.event\.(\w+?)ListFunctions\.push\(\(function\(t,e\)\{", text))
+    for n, m in enumerate(handlers):
+        end = js_block_end(text, m.end())  # not the first "}))": a handler may contain nested callbacks
+        if end < 0:
+            end = text.find("}))", m.end())
+        if n + 1 < len(handlers):  # never read into the next handler
+            end = min(end, handlers[n + 1].start())
         for row in scan(text[m.end():end]):
             row["event"] = m.group(1)
             launches.append(row)
@@ -505,11 +878,12 @@ def tc_client(text, include_infra):
                                                "name": None, "category": "tC.event.%s" % m.group(1)})
 
     # tag definitions (body of the executed code)
-    defs = {}
+    defs, bodies = {}, {}
     dpos = [(int(m.group(1)), m.start()) for m in re.finditer(r"executeTag(\d+)_\d+_\d+:function\(el,p\)\{", text)]
     for n, (tid, p0) in enumerate(dpos):
         p1 = dpos[n + 1][1] if n + 1 < len(dpos) else len(text)
         defs[tid] = hosts_in(text[p0:p1])
+        bodies[tid] = scan_signals(text[p0:p1])
 
     by_tag = {}
     for r in launches:
@@ -520,13 +894,14 @@ def tc_client(text, include_infra):
         tags.append({"platform": "Tag Commander", "id": str(tid), "name": ls[0]["name"] if ls else None,
                      "type": ("template %s" % ls[0]["template_id"]) if ls else None,
                      "status": "active" if ls else "defined but never launched in this file",
-                     "hosts": defs[tid],
+                     "hosts": defs[tid], "signals": bodies.get(tid, {}),
                      "launches": [{"trigger_id": r["trigger_id"],
                                    "trigger": (trig.get(r["trigger_id"], {}).get("name")
                                                or trig.get(r["trigger_id"], {}).get("category")),
                                    "trigger_kind": trig.get(r["trigger_id"], {}).get("kind"),
                                    "scope": r["scope"], "scope_raw": short(r["scope_raw"], 400),
-                                   "scope_mode": r["scope_mode"]} for r in ls]})
+                                   "scope_mode": r["scope_mode"],
+                                   "scope_encoding_suspect": r["scope_encoding_suspect"]} for r in ls]})
     meta.update({"tags_defined": len(defs), "tags_launched": len(by_tag),
                  "listeners": len([t for t in trig.values() if t["kind"] == "listener"]),
                  "custom_event_triggers": len([t for t in trig.values() if t["kind"] != "listener"]),
@@ -540,6 +915,12 @@ def tc_client(text, include_infra):
              "Tag names and listener trigger names are the ones typed in the interface; custom-event triggers have no "
              "name in the code (identified by the tC.event.<name> event).",
              "A text containing 'Ã©' is UTF-8 read twice: repaired automatically at extraction."]
+    suspect = sorted({r["tag_id"] for r in launches if r["scope_encoding_suspect"]})
+    if suspect:
+        notes.append("Scope values wrongly encoded (e.g. 'Ã©' for 'é') on tags %s: shown repaired in scope, kept as "
+                     "compiled in scope_raw. If the served file really holds this value, the condition may never "
+                     "match the site's variable: check on the live site, or whether the file was re-encoded when saved."
+                     % ", ".join(str(x) for x in suspect))
     tviews = sorted(trig.values(), key=lambda x: x["id"])
     return meta, tags, tviews, notes, {"launches": launches, "defs": {str(k): v for k, v in defs.items()}}
 
@@ -553,7 +934,9 @@ def one_line(t):
                 s += " UNLESS " + " | ".join(c["unless"])
             return s
         if isinstance(c, dict):
-            return "%s#%s %s" % (c.get("type"), c.get("id"), " & ".join(c.get("conditions", [])))
+            ev = (c.get("params") or {}).get("eventName") if isinstance(c.get("params"), dict) else None
+            return "%s#%s%s %s" % (c.get("name") or c.get("type"), c.get("id"), " [event=%s]" % ev if ev else "",
+                                   " & ".join(c.get("conditions", [])))
         return str(c)
     if t["platform"] == "Tag Commander":
         ls = t.get("launches", [])
@@ -583,19 +966,32 @@ def main():
     plat, src = kind
     fn = {("GTM", "client code"): gtm_client, ("MTM", "client code"): mtm_client,
           ("Tag Commander", "client code"): tc_client}.get(kind)
-    if fn:
-        meta, tags, trigs, notes, raw = fn(text, a.all)
-    elif kind == ("GTM", "interface export"):
-        meta, tags, trigs, notes, raw = gtm_export(parsed, a.all)
-    else:
-        meta, tags, trigs, notes, raw = mtm_export(parsed, a.all)
+    try:
+        if fn:
+            meta, tags, trigs, notes, raw = fn(text, a.all)
+        elif kind == ("GTM", "interface export"):
+            meta, tags, trigs, notes, raw = gtm_export(parsed, a.all)
+        else:
+            meta, tags, trigs, notes, raw = mtm_export(parsed, a.all)
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        sys.exit("Recognised as %s (%s) but could not be read: %s. The file is probably truncated or incomplete: "
+                 "ask for the complete file as an attachment." % (plat, src, e))
 
-    view = {"platform": plat, "source": src, "meta": meta, "notes": notes, "tags": tags, "triggers": trigs}
+    variables = meta.pop("_variables", [])
+    server_side = meta.pop("_server_side", [])
+    view = {"platform": plat, "source": src, "meta": meta, "notes": notes, "tags": tags, "triggers": trigs,
+            "variables": variables, "server_side": server_side}
     print("Platform : %s | Source : %s" % (plat, src))
     print("Meta     :", json.dumps(meta, ensure_ascii=False)[:600])
     for n in notes:
         print("Note     :", n)
     print("Tags     : %d in the view | Triggers: %d" % (len(tags), len(trigs)))
+    for cat, title in (("server_side", "Server   "), ("user_data", "User data"), ("consent_api", "Consent  ")):
+        ids = [t["id"] for t in tags if (t.get("signals") or {}).get(cat)]
+        print("%s: %s" % (title, ("tags " + ", ".join(ids)) if ids else "no signal in the tags"))
+    for e in server_side:
+        print("Endpoint : %s <- declared by tag(s) %s, %d hit type(s) mapped (detail in --out, key server_side)"
+              % (e["endpoint"], ", ".join(e["declared_by"]) or "-", len(e["hits"])))
     if a.table:
         print("-" * 60)
         for t in tags:

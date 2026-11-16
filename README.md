@@ -26,3 +26,19 @@ To find the file: open the browser DevTools Network tab, reload the page and fil
 A three-sheet workbook (**Summary**, **Tags**, **Consent & Findings**) and a short summary in the chat. Both follow the language of your conversation.
 
 ⚠️ This is a static reading: confirm findings in each tool's Preview/Debug mode on the live site. Consent is often handled by the cookie banner rather than the tag manager, hence the asterisks in the workbook.
+
+### Checks made for you
+
+- A tag gated on consent but only evaluated at page load (page view, DOM ready...) is flagged: on the page where the visitor first accepts, it does not fire, so the first page view and the origin of the visit are lost.
+- A blocker that contradicts its own trigger, duplicates across tools, leftovers.
+- Server-side tagging: are hits sent to a server endpoint, and which events and parameters (extra **Server-side** sheet). What the server then relays is not visible from the web container.
+- User-provided data: enhanced conversions, advanced matching, with the fields sent and where they are read.
+- Vendor consent modes besides Google's: Microsoft UET, Meta, Piano Analytics (hybrid measurement), TikTok, Pinterest.
+
+### Tests
+
+```
+python -m unittest discover tests
+```
+
+The tests run both scripts on the anonymised example containers (`gtm-tag-audit/references/examples/`). Run them after any change to a script.
