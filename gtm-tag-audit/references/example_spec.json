@@ -53,6 +53,10 @@
     {
       "label": "Duplicate deployments across platforms",
       "value": "2 (Meta Pixel, Matomo page view)"
+    },
+    {
+      "label": "Server-side tagging (GTM)",
+      "value": "YES: sgtm.example-shop.com receives the GA4 hits (tags 20 and 21)*"
     }
   ],
   "categories": [
@@ -90,7 +94,7 @@
       "blocker": "",
       "scope": "",
       "status": "Active",
-      "notes": "No consent condition: fires before the user's choice (Advanced)."
+      "notes": "No consent condition: fires before the user's choice (Advanced). Hits sent to the server container sgtm.example-shop.com (server_container_url): what the server forwards is not visible here*."
     },
     {
       "platform": "GTM",
@@ -103,7 +107,7 @@
       "blocker": "",
       "scope": "",
       "status": "Active",
-      "notes": "No consent condition."
+      "notes": "No consent condition. Routed to the server container through Google tag 20."
     },
     {
       "platform": "GTM",
@@ -129,7 +133,7 @@
       "blocker": "Marketing consent denied (blocks as long as cmp_consent does not contain marketing:true)",
       "scope": "",
       "status": "Active",
-      "notes": "The same pixel is also deployed through Tag Commander (tags 111 and 132): risk of double counting."
+      "notes": "ANOMALY: gated on marketing consent but only evaluated at page view. On the page where consent is first given the tag does not fire: first page view and origin of the visit lost (to confirm with a test). The same pixel is also deployed through Tag Commander (tags 111 and 132): risk of double counting."
     },
     {
       "platform": "GTM",
@@ -370,7 +374,7 @@
     "Consent cookie read by GTM: cmp_consent (Cookie CMP variable).",
     "CMP events used: cmp_update (GTM), cmp_consent_granted and cmp_consent_update (MTM)."
   ],
-  "constats": [
+  "findings": [
     {
       "title": "ANOMALY 1: GTM tag 60 (Display network) can never fire",
       "highlight": true,
@@ -380,6 +384,11 @@
       "title": "ANOMALY 2: the Matomo page view is sent twice",
       "highlight": true,
       "text": "GTM tag 50 (Custom HTML) and MTM tag 202 both send a page view to the analytics.example.org server, site 1. Only one of the two implementations should remain. Note that only the MTM tag is subject to requireConsent: GTM tag 50 has no consent condition."
+    },
+    {
+      "title": "ANOMALY 3: GTM tag 40 (Meta Pixel) misses the first consented page view",
+      "highlight": true,
+      "text": "The tag only fires on All Pages (page view) and is blocked as long as cmp_consent does not contain marketing:true. On the landing page the page view happens before the visitor answers the banner, and accepting does not replay it: the PageView of that page is never sent, and the origin of the visit (referrer, UTM, fbclid) is lost with it, although consent was given. Fix: add a trigger on the cmp_update event with the same condition, once per page. To confirm with a test: fresh session, land with UTM parameters, accept, check whether the pixel request leaves without navigation."
     },
     {
       "title": "Meta pixel deployed in two tools",
@@ -400,6 +409,31 @@
       "title": "Google Consent Mode: mixed implementation",
       "highlight": false,
       "text": "The GA4 tags (20 and 21) fire without any consent condition, which matches Advanced if the consent signals are properly updated by the CMP. Google Ads (30) is gated on marketing consent, which matches Basic. Check that no Update tag is needed on the CMP side."
+    },
+    {
+      "title": "Server-side tagging: the GA4 hits go through sgtm.example-shop.com",
+      "highlight": false,
+      "text": "Google tag 20 declares server_container_url, so its hits and those of GA4 event 21 are sent to a first-party server container. The Server-side sheet lists what leaves the browser. What the server then forwards (GA4, Google Ads, Meta Conversions API...) and under which consent rules is not visible from the web container*: ask for the server container export or its preview."
+    }
+  ],
+  "server_side": [
+    {
+      "platform": "GTM",
+      "endpoint": "https://sgtm.example-shop.com",
+      "tag_id": "20",
+      "event": "Google tag G-XXXXXXXXXX: page_view and automatic events",
+      "parameters": "Standard GA4 fields only (no extra configuration parameter)",
+      "user_data": "None",
+      "notes": "Declared by server_container_url in the tag's configuration settings."
+    },
+    {
+      "platform": "GTM",
+      "endpoint": "https://sgtm.example-shop.com",
+      "tag_id": "21",
+      "event": "purchase",
+      "parameters": "value = dataLayer ecommerce.value",
+      "user_data": "None",
+      "notes": "Inherits the endpoint of Google tag 20 (same measurement ID)."
     }
   ]
 }

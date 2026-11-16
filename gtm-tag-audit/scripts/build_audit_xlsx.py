@@ -49,8 +49,18 @@ Spec schema (full example: references/example_spec.json)
   "consent_extra_notes": [str, ...],
   "consent_asterisk_note": str,       # optional legend text (default provided). Any consent value
                                       # ending with "*" displays the legend automatically.
-  "constats": [ {"title": str, "text": str, "highlight": bool} ]     # findings
+  "findings": [ {"title": str, "text": str, "highlight": bool} ],    # ("constats" still accepted)
+  "server_side": [                    # optional: adds a 4th sheet, one row per hit sent to a server endpoint
+    {"platform": str, "endpoint": str, "tag_id": str, "event": str, "parameters": str,
+     "user_data": str, "notes": str}
+  ]
 }
+
+The spec is checked before anything is written: a status outside the vocabulary, a tag
+category missing from "categories", a tag without platform or id, or a consent row that
+does not have 6 cells stops the build with the list of problems (otherwise the totals of
+the Summary sheet would silently disagree). Texts starting with "=" are written as text,
+never as formulas.
 --------------------------------------------------------------------
 """
 import json
@@ -119,7 +129,15 @@ LABELS = {
         "asterisk": "* Verdict based on the container alone, without a real test. Consent (and Consent Mode) is often "
                     "handled upstream by the cookie banner: confirm with a test (network requests before and after "
                     "the choice in the banner).",
+        "sheet_server": "Server-side",
+        "server_title": "Hits sent to a server-side tagging endpoint (what leaves the browser)",
+        "server_headers": ["Platform", "Server endpoint", "Tag ID", "Event / hit", "Parameters sent",
+                           "User-provided data", "Notes"],
+        "server_note": "What the server then does with these hits (vendors it forwards to, consent rules, enrichment) "
+                       "is not visible from the web container: it needs the server container export or its preview.",
         "active_prefix": "Active", "inactive_prefix": "Inactive",
+        "statuses": ["Active", "Active (scheduled)", "Inactive (paused)", "Inactive (expired)",
+                     "Inactive (never launched)"],
         "too_many": "More than %d tags: raise MAX_ROW in the script.",
     },
     "fr": {
@@ -149,10 +167,59 @@ LABELS = {
         "asterisk": "* Verdict établi depuis le conteneur seul, sans test réel. Le consentement (et le Consent Mode) est "
                     "souvent géré en amont par le bandeau cookies : à confirmer par un test (requêtes réseau avant et "
                     "après le choix dans le bandeau).",
+        "sheet_server": "Server-side",
+        "server_title": "Hits envoyés à un endpoint de tagging server-side (ce qui quitte le navigateur)",
+        "server_headers": ["Plateforme", "Endpoint serveur", "ID Tag", "Événement / hit", "Paramètres envoyés",
+                           "Données fournies par l'utilisateur", "Remarques"],
+        "server_note": "Ce que le serveur fait ensuite de ces hits (partenaires destinataires, règles de consentement, "
+                       "enrichissement) n'est pas visible depuis le conteneur web : il faut l'export du conteneur "
+                       "serveur ou son mode aperçu.",
         "active_prefix": "Actif", "inactive_prefix": "Inactif",
+        "statuses": ["Actif", "Actif (planifié)", "Inactif (pausé)", "Inactif (expiré)", "Inactif (jamais lancé)"],
         "too_many": "Plus de %d tags : augmenter MAX_ROW dans le script.",
     },
 }
+
+
+def _put(ws, row, col, value):
+    """Writes a value as data: a text starting with '=' stays a text, it never becomes a formula."""
+    c = ws.cell(row=row, column=col, value=value)
+    if isinstance(value, str) and value.startswith("="):
+        c.data_type = "s"
+    return c
+
+
+def _findings(spec):
+    return spec.get("findings") or spec.get("constats") or []
+
+
+def validate_spec(spec, L):
+    """Raises ValueError listing everything that would make the workbook wrong or inconsistent."""
+    errors = []
+    categories = spec.get("categories") or []
+    for n, t in enumerate(spec.get("tags", []), start=1):
+        ref = "tag #%d (%s %s)" % (n, t.get("platform"), t.get("id"))
+        if not t.get("platform") or t.get("id") in (None, ""):
+            errors.append("%s: 'platform' and 'id' are required" % ref)
+        if t.get("status") not in L["statuses"]:
+            errors.append("%s: status %r is not in the vocabulary %s" % (ref, t.get("status"), L["statuses"]))
+        if t.get("category") not in categories:
+            errors.append("%s: category %r is missing from 'categories'" % (ref, t.get("category")))
+    for n, row in enumerate(spec.get("consent_rows", []), start=1):
+        if not isinstance(row, list) or len(row) != 6:
+            errors.append("consent_rows #%d: 6 cells expected (platform, type, source, behaviour, "
+                          "initialisation, update)" % n)
+    for n, r in enumerate(spec.get("server_side", []), start=1):
+        if not isinstance(r, dict) or not r.get("platform") or not r.get("endpoint"):
+            errors.append("server_side #%d: 'platform' and 'endpoint' are required" % n)
+    for n, k in enumerate(spec.get("kpis", []), start=1):
+        if not k.get("label"):
+            errors.append("kpis #%d: 'label' is required" % n)
+    for n, f in enumerate(_findings(spec), start=1):
+        if not f.get("title") or not f.get("text"):
+            errors.append("findings #%d: 'title' and 'text' are required" % n)
+    if errors:
+        raise ValueError("Invalid spec, nothing written:\n- " + "\n- ".join(errors))
 
 
 def _expand(formula):
@@ -178,7 +245,7 @@ def _asterisk_note(spec, L):
 
 
 def _legend(ws, row, text, last_col):
-    c = ws.cell(row=row, column=1, value=text)
+    c = _put(ws, row, 1, text)
     c.font, c.alignment = Font(name=FONT_NAME, size=9, italic=True, color="7F6000"), WRAP_TOP
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last_col)
     ws.row_dimensions[row].height = 30
@@ -203,12 +270,9 @@ def _build_summary(wb, spec, platforms, L):
     act = L["active_prefix"]
     ina = L["inactive_prefix"]
 
-    ws["A1"] = spec.get("title", L["default_title"])
-    ws["A1"].font = TITLE_FONT
-    ws["A2"] = spec.get("subtitle", "")
-    ws["A2"].font = SUBTITLE_FONT
-    ws["A3"] = spec.get("method_note", L["default_method"])
-    ws["A3"].font = SUBTITLE_FONT
+    _put(ws, 1, 1, spec.get("title", L["default_title"])).font = TITLE_FONT
+    _put(ws, 2, 1, spec.get("subtitle", "")).font = SUBTITLE_FONT
+    _put(ws, 3, 1, spec.get("method_note", L["default_method"])).font = SUBTITLE_FONT
 
     r = 5
     sources = spec.get("sources", [])
@@ -219,7 +283,7 @@ def _build_summary(wb, spec, platforms, L):
         for s in sources:
             vals = [s.get("platform"), s.get("container"), s.get("version"), s.get("source"), s.get("generated"), s.get("limits")]
             for col, v in enumerate(vals, start=1):
-                c = ws.cell(row=r, column=col, value=v)
+                c = _put(ws, r, col, v)
                 c.font, c.border, c.alignment = BODY_FONT, BORDER, WRAP_TOP
             ws.row_dimensions[r].height = max(30, 14 * math.ceil(len(str(s.get("limits", ""))) / 55))
             r += 1
@@ -238,9 +302,11 @@ def _build_summary(wb, spec, platforms, L):
         c.font, c.alignment = BOLD_BODY_FONT, Alignment(horizontal="left")
         r += 1
     for kpi in spec.get("kpis", []):
-        ws.cell(row=r, column=1, value=kpi["label"]).font = BODY_FONT
-        val = _expand(kpi["formula"]) if kpi.get("formula") else kpi.get("value")
-        c = ws.cell(row=r, column=2, value=val)
+        _put(ws, r, 1, kpi["label"]).font = BODY_FONT
+        if kpi.get("formula"):
+            c = ws.cell(row=r, column=2, value=_expand(kpi["formula"]))
+        else:
+            c = _put(ws, r, 2, kpi.get("value"))
         c.font, c.alignment = BOLD_BODY_FONT, Alignment(horizontal="left")
         r += 1
     note = _asterisk_note(spec, L)
@@ -254,7 +320,7 @@ def _build_summary(wb, spec, platforms, L):
     r += 1
     first = r
     for p in platforms:
-        ws.cell(row=r, column=1, value=p)
+        _put(ws, r, 1, p)
         ws.cell(row=r, column=2, value="=COUNTIF(%s,A%d)" % (RANGE["{PLATFORM}"], r))
         ws.cell(row=r, column=3, value="=SUMPRODUCT((%s=A%d)*(%s))" % (RANGE["{PLATFORM}"], r, _prefix_test(RANGE["{STATUS}"], act)))
         ws.cell(row=r, column=4, value="=SUMPRODUCT((%s=A%d)*(%s))" % (RANGE["{PLATFORM}"], r, _prefix_test(RANGE["{STATUS}"], ina)))
@@ -275,7 +341,7 @@ def _build_summary(wb, spec, platforms, L):
     r += 1
     first = r
     for cat in spec.get("categories", []):
-        ws.cell(row=r, column=1, value=cat)
+        _put(ws, r, 1, cat)
         ws.cell(row=r, column=2, value="=COUNTIF(%s,A%d)" % (RANGE["{CATEGORY}"], r))
         for col in (1, 2):
             c = ws.cell(row=r, column=col)
@@ -306,7 +372,7 @@ def _build_tags(wb, spec, L):
     act = L["active_prefix"].lower()
     for i, t in enumerate(tags, start=2):
         for col, key in enumerate(COLUMN_KEYS, start=1):
-            cell = ws.cell(row=i, column=col, value=t.get(key, ""))
+            cell = _put(ws, i, col, t.get(key, ""))
             cell.font, cell.border = BODY_FONT, BORDER
             cell.alignment = Alignment(horizontal="center", vertical="top") if key in ("platform", "id") else WRAP_TOP
         status = ws.cell(row=i, column=10)
@@ -336,7 +402,7 @@ def _build_consent(wb, spec, L):
     r = 3
     for row_data in spec.get("consent_rows", []):
         for col, val in enumerate(row_data, start=1):
-            c = ws.cell(row=r, column=col, value=val)
+            c = _put(ws, r, col, val)
             c.font, c.border, c.alignment = BODY_FONT, BORDER, WRAP_TOP
         ws.row_dimensions[r].height = max(30, 14 * math.ceil(max(len(str(v)) for v in row_data) / 34))
         r += 1
@@ -361,11 +427,11 @@ def _build_consent(wb, spec, L):
     r += 1
     ws.cell(row=r, column=1, value=L["findings_title"]).font = SECTION_FONT
     r += 1
-    for item in spec.get("constats", []):
-        ws.cell(row=r, column=1, value=item["title"]).font = BOLD_BODY_FONT
+    for item in _findings(spec):
+        _put(ws, r, 1, item["title"]).font = BOLD_BODY_FONT
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
         r += 1
-        cell = ws.cell(row=r, column=1, value=item["text"])
+        cell = _put(ws, r, 1, item["text"])
         cell.font, cell.alignment = BODY_FONT, WRAP_TOP
         if item.get("highlight"):
             for col in range(1, 7):
@@ -379,8 +445,28 @@ def _build_consent(wb, spec, L):
     return ws
 
 
+def _build_server(wb, spec, L):
+    ws = wb.create_sheet(L["sheet_server"])
+    ws.sheet_view.showGridLines = False
+    _put(ws, 1, 1, L["server_title"]).font = SECTION_FONT
+    _header(ws, 2, L["server_headers"])
+    r = 3
+    for item in spec["server_side"]:
+        vals = [item.get(k, "") for k in ("platform", "endpoint", "tag_id", "event", "parameters", "user_data", "notes")]
+        for col, v in enumerate(vals, start=1):
+            c = _put(ws, r, col, v)
+            c.font, c.border, c.alignment = BODY_FONT, BORDER, WRAP_TOP
+        ws.row_dimensions[r].height = max(30, 14 * math.ceil(max(len(str(v)) for v in vals) / 40))
+        r += 1
+    _legend(ws, r + 1, L["server_note"], 7)
+    for col, w in {"A": 14, "B": 34, "C": 9, "D": 34, "E": 48, "F": 36, "G": 44}.items():
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A3"
+    return ws
+
+
 def build_workbook(spec: dict, output_path: str) -> str:
-    """Builds the audit workbook (3 sheets) and saves it to output_path.
+    """Builds the audit workbook (3 sheets, 4 with "server_side") and saves it to output_path.
 
     Then run /mnt/skills/public/xlsx/scripts/recalc.py on the produced file.
     """
@@ -388,6 +474,7 @@ def build_workbook(spec: dict, output_path: str) -> str:
     if lang not in LABELS:
         raise ValueError("lang must be one of %s" % sorted(LABELS))
     L = LABELS[lang]
+    validate_spec(spec, L)
     platforms = list(spec.get("platforms") or [])
     for t in spec.get("tags", []):
         if t.get("platform") and t["platform"] not in platforms:
@@ -396,6 +483,8 @@ def build_workbook(spec: dict, output_path: str) -> str:
     _build_summary(wb, spec, platforms, L)
     _build_tags(wb, spec, L)
     _build_consent(wb, spec, L)
+    if spec.get("server_side"):
+        _build_server(wb, spec, L)
     wb.save(output_path)
     return output_path
 
@@ -406,5 +495,8 @@ if __name__ == "__main__":
         sys.exit(1)
     with open(sys.argv[1], "r", encoding="utf-8") as f:
         _spec = json.load(f)
-    build_workbook(_spec, sys.argv[2])
+    try:
+        build_workbook(_spec, sys.argv[2])
+    except ValueError as e:
+        sys.exit(str(e))
     print("OK -> %s  (now run recalc.py on this file)" % sys.argv[2])

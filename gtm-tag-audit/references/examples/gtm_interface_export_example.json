@@ -68,6 +68,27 @@
             "type": "TEMPLATE",
             "key": "tagId",
             "value": "G-XXXXXXXXXX"
+          },
+          {
+            "type": "LIST",
+            "key": "configSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "server_container_url"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "https://sgtm.example-shop.com"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "fingerprint": "1700000000000",
@@ -103,6 +124,27 @@
             "type": "TEMPLATE",
             "key": "measurementIdOverride",
             "value": "G-XXXXXXXXXX"
+          },
+          {
+            "type": "LIST",
+            "key": "eventSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "value"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DL - order value}}"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "fingerprint": "1700000000000",
