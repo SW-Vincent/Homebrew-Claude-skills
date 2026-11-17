@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Regression tests for gtm-tag-audit, run on the anonymised example containers.
 
-    python -m unittest discover tests
+    python -m unittest discover -s tests/gtm-tag-audit
 """
 import copy
 import json
@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gtm-tag-audit")
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "gtm-tag-audit")
 SCRIPTS = os.path.join(ROOT, "scripts")
 EXAMPLES = os.path.join(ROOT, "references", "examples")
 sys.path.insert(0, SCRIPTS)

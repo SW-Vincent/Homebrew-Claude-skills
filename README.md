@@ -38,7 +38,7 @@ A three-sheet workbook (**Summary**, **Tags**, **Consent & Findings**) and a sho
 ### Tests
 
 ```
-python -m unittest discover tests
+python -m unittest discover -s tests/gtm-tag-audit
 ```
 
 The tests run both scripts on the anonymised example containers (`gtm-tag-audit/references/examples/`). Run them after any change to a script.
