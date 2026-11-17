@@ -42,3 +42,27 @@ python -m unittest discover tests
 ```
 
 The tests run both scripts on the anonymised example containers (`gtm-tag-audit/references/examples/`). Run them after any change to a script.
+
+## matomo-mcp
+
+Guides Claude when it queries Matomo through the official [MCP Server plugin](https://plugins.matomo.org/McpServer) (matomo-org/plugin-McpServer). **Read-only**: it never creates or changes anything in Matomo, even when write tools are exposed.
+
+What it enforces:
+
+- **Account and site first.** With several Matomo connectors, Claude asks which account to use; within an account, it never guesses the site (one account holds several sites, one site can cover several domains).
+- **No silent guesses.** "Leads" or "conversions" are mapped to a goal only after you confirm it; an "X by Y" request is answered with a real cross, or Claude stops and says what is missing (saved segment, custom report).
+- **Saved segments only**, passed exactly as stored; Claude never creates segments nor triggers archiving.
+- **Reading the figures right**: segments select visits (not rows), goal counting per hit or per visit, last non-direct attribution, unique visitors only for some periods, the "Others" row and incomplete page reports, consent gating and double tagging.
+- **Visitor log**: never queried. If you ask for visit-level data, Claude checks without reading any visit whether the connector exposes it, and tells you what to report to the administrator.
+
+### Usage
+
+Install the skill, connect a Matomo instance through the MCP Server plugin, then ask in plain language, for example:
+
+> How many quote requests on the member site last month, by device?
+
+Expect a few questions before the first figure (account, site, which goal): they are grouped in one message.
+
+### Tested against
+
+A Matomo Cloud instance with MCP Server 5.1.2 (November 2026), read-only raw API access.
