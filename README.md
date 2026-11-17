@@ -66,3 +66,39 @@ Expect a few questions before the first figure (account, site, which goal): they
 ### Tested against
 
 A Matomo Cloud instance with MCP Server 5.1.2 (November 2026), read-only raw API access.
+
+## Data Studio (datastudio-reader, datastudio-deck-update)
+
+Two skills for **Data Studio** (formerly Looker Studio) reports. Google's public API returns no report data, so these skills read what the report itself loads, in your own browser session: they need **Claude in Chrome**, and they only see reports you can open (public, unlisted link or shared with you).
+
+- **datastudio-reader** reads a report: page by page, each chart with its title and section, field labels, formats and formulas, exact (unrounded) values, comparison period and totals. Other periods can be read by changing the date control, as a viewer would.
+- **datastudio-deck-update** updates a deck or report with those figures, typically last quarter's steering committee deck rolled over to the next quarter. It maps each slide to its chart in the report, checks that the extraction gives back the previous deck's figures on the previous period, extracts the new period, computes everything by code, and rebuilds charts from raw values. It keeps the previous deck's structure and texts, writes factual takeaways only, and lists what the dashboard cannot update.
+
+Install both: datastudio-deck-update relies on datastudio-reader.
+
+### Usage
+
+> Here is the link to the dashboard, give me the figures of the Activation page.
+
+> Update the attached COPIL deck to the next quarter with this Data Studio report.
+
+### What they will not do
+
+- **Read-only.** No data request is built or altered; the skills only capture the report's own requests. Data is never refreshed ("Refresh data" re-queries every data source).
+- **Disabled download is respected**: if the owner turned off download for viewers, nothing is extracted.
+- **Quotas and costs.** Every query that is not in Data Studio's cache reaches the data source: Google Analytics 4 Data API tokens and concurrent requests, query costs on BigQuery or other warehouses. Each page is loaded once, the period is changed only when needed (two or three times), tables are paged only as far as needed.
+- **No downloads** on your machine (Export, PDF, PNG) without asking.
+
+⚠️ The skills rely on Data Studio's **internal, undocumented API**: it can change without notice. `datastudio-reader/references/internal-api.md` describes what the script relies on and what to check when it breaks.
+
+### Tests
+
+```
+node --test tests/datastudio-reader/test_datastudio_reader.mjs
+```
+
+The tests run the script blocks of `datastudio-reader/SKILL.md` against a fake report (null values, comparison, totals, outputs, disabled download) and check that the annotated source in `references/` still matches them. Run them after any change to the script, and change both copies.
+
+### Tested against
+
+Three real reports (November 2026), signed in and anonymous (unlisted link): advertising and web analytics data sources, blends and calculated fields, scorecards, tables, bar and pie charts.
