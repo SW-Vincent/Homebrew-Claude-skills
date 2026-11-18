@@ -47,7 +47,7 @@ const report = {
         { name: 'qt_b', queryTimeTransformation: { dataTransformation: { textFormula: 'SUM(t0.cost) / SUM(t0.purchases)' },
           displayTransformation: { displayName: 'CPA', outputSemanticInfo: { semanticConfig: [{ semanticType: 12, currencyOptions: { currencyCode: 'EUR' } }] } } } }] },
     { componentId: 't1', type: 'simple-description', attributeConfig: { componentAttribute: { left: 0, top: 50, width: 400, height: 30 } },
-      propertyConfig: { componentProperty: { descriptionProperty: { text: '<p>Cost per purchase</p>' } } } }] } }] } },
+      propertyConfig: { componentProperty: { descriptionProperty: { text: '<p>Cost&nbsp;per purchase &amp; lead</p>' } } } }] } }] } },
 };
 const table = (a, b, extra = {}) => ({ dataset: { tableDataset: { columnInfo: [{ name: 'qt_a' }, { name: 'qt_b' }],
   column: [{ stringColumn: { values: a }, nullIndex: [] }, { doubleColumn: { values: b.filter((v) => v !== null) }, nullIndex: b.flatMap((v, i) => (v === null ? [i] : [])) }],
@@ -88,7 +88,7 @@ test('totals are aligned on the metric columns', async () => {
 
 test('title, labels, formats, periods', async () => {
   const { c } = await extracted();
-  assert.equal(c.title, 'Cost per purchase');
+  assert.equal(c.title, 'Cost per purchase & lead'); // HTML entities decoded
   assert.deepEqual(c.columns.map((k) => [k.label, k.format]), [['Campaign', 'text'], ['CPA', 'currency:EUR']]);
   assert.deepEqual(c.periods, ['20260701..20260930', '20250701..20250930']);
 });
@@ -96,11 +96,11 @@ test('title, labels, formats, periods', async () => {
 test('dump, list and json write to the overlay', async () => {
   const { DS, overlay } = await extracted();
   DS.dump('Page 1', 10);
-  assert.match(overlay(), /## Cost per purchase/);
+  assert.match(overlay(), /## Cost per purchase & lead/);
   assert.match(overlay(), /period: 20260701\.\.20260930 — compared with 20250701\.\.20250930/);
   assert.match(overlay(), /B \| 2,50\s€/);
   DS.list();
-  assert.match(overlay(), /^1\. Page 1 \| simple-table \| Cost per purchase \| Campaign, CPA \| 3\/3 rows/);
+  assert.match(overlay(), /^1\. Page 1 \| simple-table \| Cost per purchase & lead \| Campaign, CPA \| 3\/3 rows/);
   DS.json(['c1']);
   const json = JSON.parse(overlay().replace(/^JSONSTART/, '').replace(/JSONEND$/, ''));
   assert.equal(json.components.length, 1);

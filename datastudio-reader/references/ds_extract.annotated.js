@@ -40,7 +40,7 @@
 (function () {
   const DS = window.__DS;
   const unxssi = s => JSON.parse(String(s).replace(/^\)\]\}'\s*/, ''));
-  const plain = s => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  const plain = s => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&(nbsp|#160);/g, ' ').replace(/&(amp|#38);/g, '&').replace(/\s+/g, ' ').trim();
   DS.reportId = location.pathname.split('/')[2];
 
   DS.post = async (path, obj) => {
