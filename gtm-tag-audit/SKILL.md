@@ -127,9 +127,10 @@ cross-domain, conversions defined in Google Ads): read `references/gtm.md` secti
 holds settings the export does not (those made on the Google Ads side): in a full audit, read both
 when you have both.
 
-A fourth line, `Checks`, lists what the script can prove from the container alone: today, a regex
-pattern under a plain-text operator (an event `.*` with the "Use regex matching" box unchecked),
-which never matches (GTM only for now). Report each one as an anomaly, with the tags it fires or
+A fourth line, `Checks`, lists what the script can prove from the container alone (GTM only for
+now): a regex pattern under a plain-text operator (an event `.*` with the "Use regex matching" box
+unchecked), which never matches; a conversion defined in Google Ads whose domain and page cannot
+match (client code). Report each one as an anomaly, with the tags it fires or
 blocks.
 
 The table shortens long conditions (`…(cut, see --out)`) and JavaScript variables. Judge a condition

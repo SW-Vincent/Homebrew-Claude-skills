@@ -340,8 +340,12 @@ What to report:
   in the same reading.
 - **Privacy**: events collected automatically can carry personal data (file names of downloads, form
   fields, URLs with parameters); say which are on. Same for user-provided data: which sources.
-- **Conversions defined in Google Ads**: list their rules; a host that does not look like the site's
-  (typo, accented letter) is a point to confirm, the rule may never match.
+- **Conversions defined in Google Ads**: list their rules. When a conversion event is created in
+  Google Ads (page load with a URL rule), Google Ads attributes a domain to it, which becomes the
+  `^https?://<domain>` condition; it can be changed during creation only, not afterwards. A domain
+  that is not the host of the page (another domain, an accented letter: browsers send such hosts in
+  punycode) means the conversion never fires; the script reports it under `Checks`. Fix: create a
+  new conversion and set the right domain from the start (seen on a real account, November 2026).
 - **URL passthrough is not carried over** by the move: no Google tag setting holds it. Google's
   consent mode guide gives three ways: the Conversion Linker option "Enable linking on all page URLs"
   (`enableUrlPassthrough`), a configuration parameter `url_passthrough` = true on the Google tag or

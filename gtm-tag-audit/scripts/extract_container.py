@@ -512,6 +512,68 @@ def describe_setting(kind, p):
     return ", ".join("%s=%s" % (k, v) for k, v in sorted(p.items()) if k != "instanceDestinationId") or "no setting"
 
 
+def _and_conditions(e):
+    """Leaf conditions of a matching rule joined by AND only (None if the rule has an OR or a NOT)."""
+    e = e.get("booleanExpressionValue", e)
+    op = RULE_OPS.get(e.get("type"))
+    if op == "AND":
+        out = []
+        for a in e.get("args", []):
+            sub = _and_conditions(a)
+            if sub is None:
+                return None
+            out += sub
+        return out
+    if op in ("OR", "NOT"):
+        return None
+    return [e]
+
+
+def conversion_rule_checks(settings):
+    """Conversions defined in Google Ads whose URL conditions cannot hold together. Google Ads adds a domain
+    condition (^https?://<domain>) fixed when the conversion event is created; if the page the user entered is
+    on another host, or the domain has a character a browser never sends (accented host: sent in punycode),
+    the conversion never fires."""
+    out = []
+    for st in settings:
+        if st["type"] != "ccd_ads_conv_marking":
+            continue
+        for r in st["params"].get("conversionRules") or []:
+            try:
+                conds = _and_conditions(json.loads(r.get("matchingRules", "{}")))
+            except ValueError:
+                continue
+            if not conds:
+                continue
+            hosts, pages = [], []
+            for c in conds:
+                args = c.get("args", [])
+                field = next((".".join(a["contextValue"].get("keyParts", [])) for a in args if "contextValue" in a), "")
+                val = next((a["stringValue"] for a in args if "stringValue" in a), None)
+                if field != "hitData.page_location" or val is None:
+                    continue
+                op = RULE_OPS.get(c.get("type"))
+                m = re.match(r"\^https\?://(.+)$", val) if op == "matches regex" else None
+                if m:
+                    hosts.append(m.group(1).replace("\\.", ".").rstrip("/"))
+                elif op in ("contains", "starts with", "equals"):
+                    h = re.sub(r"^https?://", "", val).split("/")[0]
+                    if "." in h:
+                        pages.append(h)
+            why = []
+            for h in hosts:
+                if any(ord(ch) > 127 for ch in h):
+                    why.append("domain %s has a non-ASCII character, a browser sends such a host in punycode" % h)
+                for pg in pages:
+                    if not (pg == h or pg.endswith("." + h)):
+                        why.append("domain %s and page %s are on different hosts" % (h, pg))
+            if why:
+                out.append("conversion defined in Google Ads that can never fire (label %s): %s. The domain is set "
+                           "by Google Ads when the conversion event is created and cannot be changed afterwards: "
+                           "create a new conversion with the right domain" % (r.get("conversionLabel"), "; ".join(why)))
+    return out
+
+
 def setting_row(sid, kind, p, source):
     dest = p.get("instanceDestinationId")
     return {"id": sid, "type": kind, "label": SETTING_LABELS.get(kind, "processing step" if kind in CCD_STEPS
@@ -652,6 +714,7 @@ def gtm_client(text, include_infra):
               "%s%s%s" % (pred_text(k), "; fires tags " + ", ".join(sorted(u["fires"])) if u["fires"] else "",
                           "; blocks tags " + ", ".join(sorted(u["blocks"])) if u["blocks"] else "")
               for k, u in sorted(suspect.items())]
+    checks += conversion_rule_checks(settings)
     variables = [{"id": "m%d" % i, "type": m.get("function"), "reads": _gtm_macro_desc(m, macros),
                   **({"code": _gtm_render(m.get("vtp_javascript"), macros)} if m.get("function") == "__jsm" else {})}
                  for i, m in enumerate(macros)]

@@ -326,6 +326,24 @@ class Extraction(unittest.TestCase):
         self.assertEqual([t for t in view["tags"] if t["id"] == "14"][0]["destination"]["product"], "Google Ads")
         self.assertIn("Setting  : Consent Mode default", proc.stdout)
         self.assertNotIn("processing step", proc.stdout)
+        self.assertEqual(view["checks"], [])  # domain and page agree: nothing to report
+
+    def test_conversion_rule_on_another_host_is_checked(self):
+        url = {"contextValue": {"namespaceType": 1, "keyParts": ["hitData", "page_location"]}}
+        rule = json.dumps({"type": 2, "args": [
+            {"booleanExpressionValue": {"type": 4, "args": [url, {"stringValue": "^https?://ex\u00e9mple\\.com"}]}},
+            {"booleanExpressionValue": {"type": 8, "args": [url, {"stringValue": "shop.other.com/quote"}]}}]})
+        js = """var data = {"resource": {"version":"1","macros":[{"function":"__e"}],
+"tags":[{"function":"__ccd_ads_conv_marking","tag_id":12,"vtp_instanceDestinationId":"AW-123",
+ "vtp_conversionRules":["list",["map","matchingRules",%s,"conversionLabel","LBL"]]},{"function":"__awct","tag_id":16}],
+"predicates":[{"function":"_eq","arg0":["macro",0],"arg1":"gtm.init"}],"rules":[[["if",0],["add",0,1]]]}};""" % json.dumps(rule)
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, view = extract(write(tmp, "gtm.js", js))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(view["checks"]), 1, view["checks"])
+        self.assertIn("label LBL", view["checks"][0])
+        self.assertIn("non-ASCII", view["checks"][0])
+        self.assertIn("different hosts", view["checks"][0])
 
     def test_unreadable_files_stop_with_a_message_not_a_traceback(self):
         text = read(example("gtm_client_code_example.js"))
