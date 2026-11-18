@@ -568,9 +568,11 @@ def conversion_rule_checks(settings):
                     if not (pg == h or pg.endswith("." + h)):
                         why.append("domain %s and page %s are on different hosts" % (h, pg))
             if why:
-                out.append("conversion defined in Google Ads that can never fire (label %s): %s. The domain is set "
-                           "by Google Ads when the conversion event is created and cannot be changed afterwards: "
-                           "create a new conversion with the right domain" % (r.get("conversionLabel"), "; ".join(why)))
+                out.append("conversion defined in Google Ads that can never fire (label %s): %s. The conversion's "
+                           "domain is not set where its page is: Google Ads fills it in by default on the first "
+                           "screen of the creation (website data source), before the page URL is asked, and it "
+                           "cannot be changed once the conversion exists. Fix: create a new conversion and check "
+                           "the domain on that first screen" % (r.get("conversionLabel"), "; ".join(why)))
     return out
 
 
