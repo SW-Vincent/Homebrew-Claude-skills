@@ -111,8 +111,8 @@ python scripts/extract_container.py <file> --raw /tmp/raw.json  # raw object, to
 ```
 
 Options combine. The view (`--out`) holds, per tag, the resolved parameters, triggers and blockers,
-the native consent setting and the tags sequenced before or after it; for an export it also holds
-the `variables` list (what each `{{Variable}}` reads). If the script stops with "could not be
+the native consent setting and the tags sequenced before or after it, and the `variables` list (what
+each `{{Variable}}` reads; for client code by index `mN`, with the full code of JavaScript variables). If the script stops with "could not be
 read", the file is truncated: ask for it again, do not work around it.
 
 The summary also has three lines, `Server`, `User data` and `Consent`, listing the tags where the
@@ -120,6 +120,16 @@ script found a sign of server-side tagging, of user-provided data (enhanced conv
 matching) or of a vendor consent API. The detail is in each tag's `signals` and in the `server_side`
 list of the view. Always follow them up with `references/server_side_user_data_consent_apis.md`
 (Steps 5 and 6).
+
+A fourth line, `Checks`, lists what the script can prove from the container alone: today, a regex
+pattern under a plain-text operator (an event `.*` with the "Use regex matching" box unchecked),
+which never matches (GTM only for now). Report each one as an anomaly, with the tags it fires or
+blocks.
+
+The table shortens long conditions (`…(cut, see --out)`) and JavaScript variables. Judge a condition
+on what its variables really read, from the `variables` list of the view (full code of a JS
+variable, attribute read by a DOM variable), never from the shortened table, and read the operator
+as written, not as the value suggests.
 
 The script recognises the format, mechanically resolves what causes errors (GTM macro and rule
 indexes, trigger references, Tag Commander scopes and polarities, wrongly encoded names) and prints
@@ -274,9 +284,23 @@ after the choice: the page view is then sent, but check what remains of the refe
   reference, section 3.
 - **Leftovers**: `__gas` variable without `__ua` tag, paused tags whose trigger still exists, expired
   MTM tags, never-launched Tag Commander tags.
-- **Anomalies to hunt actively**: blocker that contradicts the trigger, consent-gated tag evaluated
+- **Anomalies to hunt actively**: the script's `Checks` (regex pattern under a plain-text operator),
+  blocker that contradicts the trigger, consent-gated tag evaluated
   only at page load (Step 5: first page view and origin of the visit lost), identical tags fired by
   the same trigger, several pixel IDs of the same vendor, preproduction URLs in a production scope.
+- **Anomaly or point to confirm.** Write `ANOMALY` only when the container alone proves the defect,
+  whatever the site does: a `Checks` line, a blocker covering its own trigger, conditions that
+  contradict each other. A condition on a variable that reads the page (JavaScript, DOM element,
+  cookie) depends on the site, so its result is never proven by the container, even when the code
+  looks as if it can never match. When the verdict depends on what the container does not show
+  (that page, settings in the vendor's interface such as conversion counting or Google tag
+  settings, the CMP's behaviour; a variable reading an unusual attribute may be specific to the
+  client's environment), write "to confirm"
+  with the test that settles it, and ask the user, who often knows. If a browser tool is available
+  (Claude in Chrome), offer to run the test yourself, once the user agrees: in GTM Preview (Tag
+  Assistant) if they can open it, otherwise on the live site, reading the network requests (vendor
+  hits, the `gcs` parameter of Google requests), with the site's cache and cookies cleared first so
+  that a stored consent or a cached container does not skew the result.
 - **Across platforms** (the value of a multi-tool audit): the same pixel or the same `matomoUrl` +
   `idSite` loaded by two tools (double counting), consent honoured in one tool and not in the other
   for the same vendor, several tools sending the same event.

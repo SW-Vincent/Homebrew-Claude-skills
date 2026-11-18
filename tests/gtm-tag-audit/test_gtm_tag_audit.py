@@ -199,6 +199,62 @@ class Extraction(unittest.TestCase):
         tag = [t for t in tc["tags"] if t["id"] == "111"][0]
         self.assertIn("Meta consent API: fbq consent revoke", tag["signals"]["consent_api"])
 
+    def test_regex_pattern_under_plain_operator_is_checked(self):
+        # client code: blocker on event ".*" compared with "=" (regex box unchecked), and the same with _re
+        js = """var data = {"resource": {"version":"1","macros":[{"function":"__e"},{"function":"__k","vtp_name":"cmp"}],
+"tags":[{"function":"__awct","tag_id":5},{"function":"__awct","tag_id":6}],
+"predicates":[{"function":"_eq","arg0":["macro",0],"arg1":"gtm.js"},{"function":"_eq","arg0":["macro",0],"arg1":".*"},
+{"function":"_re","arg0":["macro",0],"arg1":".*"},{"function":"_cn","arg0":["macro",1],"arg1":"ads"}],
+"rules":[[["if",0],["add",0,1]],[["if",1],["unless",3],["block",0]],[["if",2],["unless",3],["block",1]]]}};"""
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, view = extract(write(tmp, "gtm.js", js))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(view["checks"]), 1, view["checks"])
+        self.assertIn("{{event}} = .*", view["checks"][0])
+        self.assertIn("blocks tags 5", view["checks"][0])
+        self.assertIn("Checks   : 1 to look at", proc.stdout)
+        # export: the same on a blocker trigger, the example container itself has none
+        d = json.loads(read(example("gtm_interface_export_example.json")))
+        trig = [t for t in d["containerVersion"]["trigger"] if t["triggerId"] == "5"][0]
+        trig["customEventFilter"] = [{"type": "EQUALS", "parameter": [
+            {"type": "TEMPLATE", "key": "arg0", "value": "{{_event}}"}, {"type": "TEMPLATE", "key": "arg1", "value": ".*"}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, view = extract(write(tmp, "export.json", json.dumps(d)))
+            proc0, view0 = extract(example("gtm_interface_export_example.json"))
+        self.assertEqual(view0["checks"], [])
+        self.assertEqual(len(view["checks"]), 1, view["checks"])
+        self.assertIn("#5: {{_event}} EQUALS .*; blocks tags 40", view["checks"][0])
+
+    def test_client_view_lists_what_variables_read(self):
+        code = "function(){var s=document.querySelector('.step');return s?s.dataset.step:undefined}" + " " * 80 + "//end"
+        js = """var data = {"resource": {"version":"1","macros":[{"function":"__e"},
+{"function":"__jsm","vtp_javascript":["template",%s]},
+{"function":"__d","vtp_elementSelector":"input#mail","vtp_attributeName":"data-value","vtp_selectorType":"CSS"}],
+"tags":[{"function":"__awct","tag_id":5,"vtp_email":["macro",2]}],
+"predicates":[{"function":"_eq","arg0":["macro",1],"arg1":"1"}],"rules":[[["if",0],["add",0]]]}};""" % json.dumps(code)
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, view = extract(write(tmp, "gtm.js", js))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        tag = view["tags"][0]
+        self.assertEqual(tag["params"]["email"], "{{DOM:input#mail (attribute data-value)}}")
+        self.assertIn("[m1]", tag["firing"][0]["if"][0])  # shortened JS variable, with its index
+        m1 = [v for v in view["variables"] if v["id"] == "m1"][0]
+        self.assertTrue(m1["code"].endswith("//end"))  # full code in the view
+
+    def test_meta_parameter_builder_is_a_server_side_hint(self):
+        js = """var data = {"resource": {"version":"1","macros":[{"function":"__e"}],
+"tags":[{"function":"__cvt_12","tag_id":7,"vtp_pixelId":"1","vtp_enableParamBuilderSdk":true},
+{"function":"__html","tag_id":8,"vtp_html":"<script src=\\"https://unpkg.com/meta-capi-param-builder-clientjs/x.js\\"></script>"},
+{"function":"__cvt_12","tag_id":9,"vtp_pixelId":"1","vtp_enableParamBuilderSdk":false}],
+"predicates":[{"function":"_eq","arg0":["macro",0],"arg1":"gtm.js"}],"rules":[[["if",0],["add",0,1,2]]]}};"""
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, view = extract(write(tmp, "gtm.js", js))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        sig = {t["id"]: (t.get("signals") or {}).get("server_side", []) for t in view["tags"]}
+        self.assertTrue(any("parameter builder" in x for x in sig["7"]))
+        self.assertTrue(any("parameter builder" in x for x in sig["8"]))
+        self.assertEqual(sig["9"], [])
+
     def test_unreadable_files_stop_with_a_message_not_a_traceback(self):
         text = read(example("gtm_client_code_example.js"))
         snippet = '// google_tag_manager loader\n(function(w,d,s,l,i){})(window,document,"script","dataLayer","GTM-X");'

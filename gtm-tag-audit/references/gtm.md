@@ -151,6 +151,11 @@ sometimes `negate: true` (the filter is inverted). Operators met: `EQUALS`, `CON
 `MATCH_REGEX`, `ENDS_WITH`. A `CUSTOM_EVENT` trigger fires if `customEventFilter` (event name) AND
 all its `filter` entries are true.
 
+The "Use regex matching" box of a custom event trigger is the operator: checked, `MATCH_REGEX`;
+unchecked, `EQUALS`. An event name `.*` under `EQUALS` is compared literally and never matches, so
+the trigger never fires (as a blocker, it never blocks). The script lists such conditions under
+`Checks`.
+
 **A trigger used as a blocker is an ordinary trigger**: nothing in its object says it blocks, it is
 the tag that references it in `blockingTriggerId`. For a consent block, look for triggers named
 "consent not granted" or equivalent, with a `negate` filter.
@@ -190,7 +195,7 @@ sources once infrastructure tags are excluded.
 | `__gaawc` / `gaawc` | GA4 configuration (older form) | Google Analytics 4 |
 | `__awct` / `awct` | Google Ads, conversion tracking | Google Ads |
 | `__sp` / `sp` | Google Ads, remarketing | Google Ads |
-| `__gclidw` / `gclidw` | Conversion Linker | Google Ads infrastructure |
+| `__gclidw` / `gclidw` | Conversion Linker | Google Ads infrastructure (shown as Legacy in the tag picker since GTM's move to destination tags, October 2026: see below) |
 | `__flc` `__fls` | Floodlight counter / sales | Display, Campaign Manager 360 |
 | `__ua` / `ua` | Universal Analytics | obsolete since July 2023 |
 | `__paused` | paused tag | original type only |
@@ -204,6 +209,11 @@ ID prefixes of a `googtag` (parameter `tagId` / `vtp_tagId`):
 | `AW-` | Google Ads |
 | `DC-` / `GT-` | Campaign Manager 360, Display & Video 360 (Floodlight via gtag) |
 | `GTM-` | another GTM container |
+
+Since October 2026, GTM offers destination tags (Google Analytics, Google Ads, Floodlight) that carry
+the Google tag's shared settings and do the conversion linking themselves; the Conversion Linker is
+then marked Legacy. In a container migrated to them, a missing Conversion Linker is not a gap. Their
+type codes in the client code and the export have not been seen yet: report them as found.
 
 No `G-` in the whole container means there is no GA4. A `__gas` variable (Google Analytics
 Settings) that no `__ua` tag references any more is a dead leftover, not GA4.

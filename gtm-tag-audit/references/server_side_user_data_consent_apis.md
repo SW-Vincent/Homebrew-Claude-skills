@@ -34,6 +34,7 @@ mean absent: the logic may live in the page, in the CMP or in the server contain
 | Custom HTML, any platform | `gtag('config', ..., {server_container_url: ...})`, `transport_url`, `first_party_collection` | same thing, hand-written |
 | Third-party templates (data tags of server-side hosting vendors, etc.) | a setting holding a URL on the client's own domain or a hosting vendor's domain | probable server endpoint: name the template (GTM `customTemplate`, `permissions`) and say "to confirm" |
 | Meta pixel | `eventID` in `fbq('track', ...)` | deduplication key: the same event is probably also sent server to server (Conversions API). It does not say which server |
+| Meta pixel templates, custom HTML | `enableParamBuilderSdk` = true, `meta-capi-param-builder`, `clientParamBuilder` | Meta's parameter builder prepares `fbc` / `fbp` for events sent server to server: a hint of a Conversions API setup, not a proof (some templates turn it on by default) |
 | Tag Commander | `cact('trigger', '<event>', ...)`, hosts on `commander1.com` | Commanders Act event API and collection domain: possible server-side destinations. Seen on one real container only, to confirm |
 
 An endpoint is typically a subdomain of the site (`sgtm.`, `metrics.`, `data.`, or a random label

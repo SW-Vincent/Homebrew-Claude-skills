@@ -134,6 +134,8 @@ SIGNAL_PATTERNS = {
          r"cact\(\s*" + Q + r"trigger" + Q + r"\s*,\s*" + Q + r"([\w.-]+)"),
         ("Meta eventID present: deduplication with a server-side event (Conversions API) is probable",
          r"fbq\([^)]{0,300}\beventID\b"),
+        ("Meta Conversions API parameter builder loaded (prepares fbc/fbp for server events): Conversions API "
+         "probable, to confirm", r"meta-capi-param-builder|clientParamBuilder"),
     ],
     "user_data": [
         ("gtag user_data set in code", r"gtag\(\s*" + Q + r"set" + Q + r"\s*,\s*" + Q + r"user_data"),
@@ -165,6 +167,17 @@ SIGNAL_PATTERNS = {
 SIGNAL_RE = {cat: [(label, re.compile(rx)) for label, rx in items] for cat, items in SIGNAL_PATTERNS.items()}
 CONSENT_KEY_RE = re.compile(r"consent|ldu|dpo|_storage$|wait_for_update|url_?passthrough|ads_?data_?redaction", re.I)
 MATCHING_KEY_RE = re.compile(r"advanced.?matching|edvanced.?matching|enhanced.?conversion", re.I)
+
+
+# A value that looks like a regular expression (".*", "^...", "...$", "\\d", "(a|b)") under an operator that
+# compares plain text: GTM compares it literally, so the condition (almost) never matches. Typical case: the
+# "Use regex matching" box left unchecked on a custom event trigger whose event name is ".*".
+REGEX_LIKE_RE = re.compile(r"\.\*|\.\+|^\^|[^\\]\$$|\\[dwsb.]|\([^)]*\|[^)]*\)")
+PLAIN_OPS = {"_eq", "_cn", "_sw", "_ew", "EQUALS", "CONTAINS", "STARTS_WITH", "ENDS_WITH"}
+
+
+def regex_under_plain_operator(op, value):
+    return op in PLAIN_OPS and isinstance(value, str) and bool(REGEX_LIKE_RE.search(value))
 
 
 def leaves(obj):
@@ -216,6 +229,10 @@ def setting_signals(row, scalars):
     for k in sorted(scalars):
         if MATCHING_KEY_RE.search(k) and str(scalars[k]).lower() == "true":
             add_signal(row, "user_data", "setting %s = true" % k)
+        if re.search(r"param_?builder", k, re.I) and str(scalars[k]).lower() == "true":
+            add_signal(row, "server_side", "setting %s = true: Meta Conversions API parameter builder (prepares fbc/fbp "
+                       "for server events); a hint of a Conversions API setup, not a proof (on by default in some "
+                       "templates)" % k)
 
 
 def google_routing(rows, server_map):
@@ -296,7 +313,9 @@ def _gtm_macro_desc(m, macros=None, depth=0):
     if f == "__j":
         return "JS variable:%s" % m.get("vtp_name")
     if f == "__d":
-        return "DOM:%s" % (m.get("vtp_elementId") or m.get("vtp_elementSelector"))
+        attr = m.get("vtp_attributeName")
+        return "DOM:%s%s" % (m.get("vtp_elementId") or m.get("vtp_elementSelector"),
+                             " (attribute %s)" % attr if attr else " (text)")
     if f == "__gas":
         return "GA settings (Universal Analytics):%s" % r(m.get("vtp_trackingId"))
     if f == "__awec":
@@ -329,7 +348,10 @@ def _gtm_render(v, macros, depth=0):
     if isinstance(v, list) and v:
         if v[0] == "macro" and len(v) > 1:
             if macros is not None and isinstance(v[1], int) and v[1] < len(macros):
-                return "{{%s}}" % _gtm_macro_desc(macros[v[1]], macros, depth)
+                desc = _gtm_macro_desc(macros[v[1]], macros, depth)
+                if macros[v[1]].get("function") == "__jsm":  # shortened: full code in the view (variables, m<index>)
+                    desc += " [m%d]" % v[1]
+                return "{{%s}}" % desc
             return "{{m%s}}" % v[1]
         if v[0] == "template":
             return "".join(_gtm_render(x, macros, depth) for x in v[1:])
@@ -415,6 +437,7 @@ def gtm_client(text, include_infra):
 
     firing = {j: [] for j in range(len(tags))}
     blocking = {j: [] for j in range(len(tags))}
+    suspect = {}  # predicate index -> {"fires": set of tag_ids, "blocks": set of tag_ids}
     for ru in rules:
         # a rule is a list of clauses: ["if", ...], ["unless", ...], ["add", ...], ["block", ...]
         clauses = {}
@@ -426,6 +449,11 @@ def gtm_client(text, include_infra):
             firing[t].append(cond)
         for t in clauses.get("block", []):
             blocking[t].append(cond)
+        for k in clauses.get("if", []) + clauses.get("unless", []):
+            if regex_under_plain_operator(preds[k].get("function"), preds[k].get("arg1")):
+                u = suspect.setdefault(k, {"fires": set(), "blocks": set()})
+                u["fires"].update(str(tags[t].get("tag_id")) for t in clauses.get("add", []))
+                u["blocks"].update(str(tags[t].get("tag_id")) for t in clauses.get("block", []))
 
     out_tags, infra, google_rows, server_map = [], 0, [], {}
     for j, t in enumerate(tags):
@@ -490,9 +518,18 @@ def gtm_client(text, include_infra):
     notes = ["Client code: tag, trigger and variable names are not in the file. The tag_id is the ID shown in the GTM interface.",
              "%d GTM infrastructure tags (listeners, trigger groups) %s." %
              (infra, "included" if include_infra else "excluded from the view")]
+    checks = ["regex pattern under a plain-text operator, never matches as intended (regex box unchecked?): "
+              "%s%s%s" % (pred_text(k), "; fires tags " + ", ".join(sorted(u["fires"])) if u["fires"] else "",
+                          "; blocks tags " + ", ".join(sorted(u["blocks"])) if u["blocks"] else "")
+              for k, u in sorted(suspect.items())]
+    variables = [{"id": "m%d" % i, "type": m.get("function"), "reads": _gtm_macro_desc(m, macros),
+                  **({"code": _gtm_render(m.get("vtp_javascript"), macros)} if m.get("function") == "__jsm" else {})}
+                 for i, m in enumerate(macros)]
     meta = {"container_version": r.get("version"), "tags_total": len(tags), "tags_infrastructure": infra,
             "macros": len(macros), "predicates": len(preds), "rules": len(rules),
-            "_server_side": list(server_map.values())}
+            "_server_side": list(server_map.values()), "_checks": checks, "_variables": variables}
+    notes.append("What each {{variable}} reads is in the 'variables' list of the view (--out); a JS variable shown "
+                 "shortened carries its index [mN], its full code is in that list.")
     return meta, out_tags, [], notes, data
 
 
@@ -608,11 +645,28 @@ def gtm_export(d, include_infra):
     templates = [{"id": "cvt_" + str(c.get("templateId")), "name": c.get("name"),
                   "gallery": (c.get("galleryReference") or {}).get("repository")} for c in cv.get("customTemplate", [])]
     tviews = [trig_view(k) for k in trig]
+    use = {}
+    for t in cv.get("tag", []):
+        for key, verb in (("firingTriggerId", "fires"), ("blockingTriggerId", "blocks")):
+            for tid in t.get(key, []) or []:
+                use.setdefault(tid, {"fires": [], "blocks": []})[verb].append(str(t.get("tagId")))
+    checks = []
+    for tid, t in trig.items():
+        for f in [f for k in ("customEventFilter", "filter", "autoEventFilter") for f in t.get(k, []) or []]:
+            args = {p["key"]: p.get("value") for p in f.get("parameter", [])}
+            if regex_under_plain_operator(f.get("type"), args.get("arg1")):
+                u = use.get(tid, {"fires": [], "blocks": []})
+                checks.append("regex pattern under a plain-text operator, never matches as intended (regex box "
+                              "unchecked?): trigger %s#%s: %s%s%s" % (
+                                  t.get("name"), tid, _gtm_filter_text(f),
+                                  "; fires tags " + ", ".join(u["fires"]) if u["fires"] else "",
+                                  "; blocks tags " + ", ".join(u["blocks"]) if u["blocks"] else
+                                  ("" if u["fires"] else "; used by no tag")))
     c = cv.get("container", {})
     meta = {"container_public_id": c.get("publicId"), "container_name": c.get("name"),
             "version_id": cv.get("containerVersionId"), "version_name": cv.get("name"),
             "tags_total": len(tags), "triggers": len(trig), "variables": len(cv.get("variable", [])),
-            "custom_templates": templates, "_server_side": list(server_map.values()),
+            "custom_templates": templates, "_server_side": list(server_map.values()), "_checks": checks,
             "_variables": [{"id": v.get("variableId"), "name": v.get("name"), "type": v.get("type"),
                             "params": _gtm_params(v.get("parameter"))} for v in cv.get("variable", [])]}
     notes = ["Interface export: names, triggers, blockers and native consent settings are available.",
@@ -926,6 +980,10 @@ def tc_client(text, include_infra):
 
 
 # ---------------------------------------------------------------------- output
+def cut(s, n):
+    return s if len(s) <= n else s[: n - 1] + "…(cut, see --out)"
+
+
 def one_line(t):
     def cond(c):
         if isinstance(c, dict) and "if" in c:
@@ -941,11 +999,11 @@ def one_line(t):
     if t["platform"] == "Tag Commander":
         ls = t.get("launches", [])
         return "%s | %s | %s | %s | %s" % (t["id"], t.get("name"), t.get("type"),
-                                          "; ".join(sorted({str(l["trigger"]) for l in ls}))[:70],
-                                          "; ".join(sorted({l["scope"] for l in ls if l["scope"]}))[:110])
+                                          cut("; ".join(sorted({str(l["trigger"]) for l in ls})), 70),
+                                          cut("; ".join(sorted({l["scope"] for l in ls if l["scope"]})), 110))
     return "%s | %s | %s | F: %s | B: %s" % (t["id"], t.get("name") or t.get("name_md5") or "-", t.get("type"),
-                                            " || ".join(cond(c) for c in t.get("firing", []))[:110],
-                                            " || ".join(cond(c) for c in t.get("blocking", []))[:110])
+                                            cut(" || ".join(cond(c) for c in t.get("firing", [])), 110),
+                                            cut(" || ".join(cond(c) for c in t.get("blocking", [])), 110))
 
 
 def main():
@@ -979,8 +1037,9 @@ def main():
 
     variables = meta.pop("_variables", [])
     server_side = meta.pop("_server_side", [])
+    checks = meta.pop("_checks", None)  # None: no mechanical check written for this platform yet
     view = {"platform": plat, "source": src, "meta": meta, "notes": notes, "tags": tags, "triggers": trigs,
-            "variables": variables, "server_side": server_side}
+            "variables": variables, "server_side": server_side, "checks": checks}
     print("Platform : %s | Source : %s" % (plat, src))
     print("Meta     :", json.dumps(meta, ensure_ascii=False)[:600])
     for n in notes:
@@ -989,6 +1048,10 @@ def main():
     for cat, title in (("server_side", "Server   "), ("user_data", "User data"), ("consent_api", "Consent  ")):
         ids = [t["id"] for t in tags if (t.get("signals") or {}).get(cat)]
         print("%s: %s" % (title, ("tags " + ", ".join(ids)) if ids else "no signal in the tags"))
+    print("Checks   : %s" % ("not available for %s yet" % plat if checks is None else
+                               "%d to look at" % len(checks) if checks else "nothing found"))
+    for c in checks or []:
+        print("Check    :", c)
     for e in server_side:
         print("Endpoint : %s <- declared by tag(s) %s, %d hit type(s) mapped (detail in --out, key server_side)"
               % (e["endpoint"], ", ".join(e["declared_by"]) or "-", len(e["hits"])))
