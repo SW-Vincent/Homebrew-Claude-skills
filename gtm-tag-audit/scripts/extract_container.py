@@ -31,7 +31,7 @@ import re
 import sys
 
 GTM_INFRA = {"__tg", "__hl", "__lcl", "__cl", "__fsl", "__sdl", "__tl", "__evl", "__ytl",
-             "__ecl", "__rep"}  # last two: seen in a real client code, absent from its export
+             "__ecl", "__rep"}  # click listener per trigger; remote config loader of a destination (client code only)
 HOST_RE = re.compile(r"(?:https?:)?//([a-z0-9][a-z0-9.\-]*\.[a-z]{2,})(?=[/:?\"'\\)\s]|$)", re.I)
 
 
@@ -432,7 +432,7 @@ SETTING_LABELS = {
     "ogt_auto_events": "events collected automatically",
     "ogt_1p_data_v2": "user-provided data",
     "ogt_cross_domain": "cross-domain (domain linking)",
-    "ogt_ads_datatos": "Google Ads data terms (to confirm)",
+    "ogt_ads_datatos": "Google Ads customer data terms",
     "ccd_ads_conv_marking": "conversions defined in Google Ads from events or URLs",
     "ccd_em_page_view": "page view settings",
     "ccd_em_form": "form events settings",
@@ -440,8 +440,36 @@ SETTING_LABELS = {
 }
 CCD_STEPS = {"ccd_ads_first", "ccd_ads_last", "ccd_enable_cm", "ccd_ga_first", "ccd_ga_last"}
 DTC_LABELS = {"preventAnalytics": "behavioral analytics data blocked until consent",
-              "restrictAdvertisingTransmission": "only limited advertising data when consent is denied",
-              "preventAllConsent": "meaning to confirm (maybe \"manage default consent settings for data collection\")"}
+              "restrictAdvertisingTransmission": "advertising data restricted when consent is denied",
+              "preventAllConsent": "\"manage default consent settings for data collection\" (per a container owner)"}
+# Operators of the matching rules (booleanExpressionValue.type), read in the evaluator of the client code.
+RULE_OPS = {1: "OR", 2: "AND", 3: "NOT", 4: "matches regex", 5: "equals", 6: "starts with", 7: "ends with",
+            8: "contains", 9: "<", 10: "<=", 11: ">", 12: ">=", 13: "in list"}
+
+
+def render_rule(e):
+    """Matching rule of a __ccd_* setting (JSON) as text, e.g. (a matches regex 'x' AND b equals 'y')."""
+    if isinstance(e, str):
+        try:
+            e = json.loads(e)
+        except ValueError:
+            return e
+    if "booleanExpressionValue" in e:
+        e = e["booleanExpressionValue"]
+    if "contextValue" in e:
+        return ".".join(e["contextValue"].get("keyParts", []))
+    for k in ("stringValue", "integerValue", "doubleValue", "booleanValue"):
+        if k in e:
+            return "'%s'" % e[k] if k == "stringValue" else str(e[k])
+    op, args = RULE_OPS.get(e.get("type"), "op%s" % e.get("type")), e.get("args", [])
+    if op in ("OR", "AND"):
+        return "(" + (" %s " % op).join(render_rule(a) for a in args) + ")"
+    if op == "NOT":
+        return "NOT " + render_rule(args[0])
+    parts = [render_rule(a) for a in args]
+    if op == "equals" and parts and parts[0].startswith("'"):  # value first: put the field first
+        parts = parts[::-1]
+    return "%s %s %s" % (parts[0], op, " ".join(parts[1:]))
 
 
 def _truthy(v):
@@ -459,7 +487,8 @@ def describe_setting(kind, p):
                          else "no denied default for %s" % what)
         return "; ".join(parts)
     if kind == "ogt_dtc":
-        on = [DTC_LABELS.get(k, k) for k, v in p.items() if _truthy(v)]
+        on = [DTC_LABELS.get(k, k) + (" (%s)" % p["level"] if k == "restrictAdvertisingTransmission" and p.get("level")
+                                      else "") for k, v in p.items() if k != "level" and _truthy(v)]
         return ("on: " + "; ".join(on)) if on else "nothing restricted (%s all off)" % ", ".join(sorted(p))
     if kind == "ogt_auto_events":
         ev = {k[6:]: _truthy(v) for k, v in p.items() if k.startswith("enable") and not k.endswith("Hidden")}
@@ -469,18 +498,17 @@ def describe_setting(kind, p):
         return "collection %s; automatic detection %s; manual selectors %s" % tuple(
             "on" if _truthy(p.get(k)) else "off" for k in ("isEnabled", "isAutoEnabled", "isManualEnabled"))
     if kind == "ogt_cross_domain":
-        return "domains: %s" % ", ".join(p.get("rules") or []) if p.get("rules") else "no domain"
+        return ("linker on domains: %s (forms decorated, incoming links accepted, parameter in the query); "
+                "this is not URL passthrough" % ", ".join(p.get("rules")) if p.get("rules") else "no domain")
+    if kind == "ogt_ads_datatos":
+        return "accepted: sets ads_customer_data_terms for the destination"
     if kind == "ccd_ads_conv_marking":
-        out = []
-        for rule in p.get("conversionRules") or []:
-            vals = re.findall(r'"stringValue"\s*:\s*"((?:[^"\\]|\\.)*)"', rule.get("matchingRules", ""))
-            out.append("label %s when %s" % (rule.get("conversionLabel"), " / ".join(json.loads('"%s"' % v) for v in vals)))
-        return "; ".join(out) or "no rule"
+        return "; ".join("label %s when %s" % (r.get("conversionLabel"), render_rule(r.get("matchingRules", "{}")))
+                         for r in p.get("conversionRules") or []) or "no rule"
     if kind == "ccd_add_1p_data":
-        hits = re.findall(r'"stringValue"\s*:\s*"([^"]*)"', str(p.get("matchingRules", "")))
-        return "sources accepted: %s; on hits: %s" % (
+        return "sources accepted: %s; on hits where %s" % (
             ", ".join(k[6:] for k, v in sorted(p.items()) if k.startswith("accept") and _truthy(v)) or "none",
-            ", ".join(hits) or "not stated")
+            render_rule(p["matchingRules"]) if p.get("matchingRules") else "not stated")
     return ", ".join("%s=%s" % (k, v) for k, v in sorted(p.items()) if k != "instanceDestinationId") or "no setting"
 
 
@@ -1167,6 +1195,12 @@ def main():
             notes.append("Destination tags (%s): they do the conversion linking, so a paused or absent Conversion "
                          "Linker is not a gap." % ", ".join("%s %s" % (t["id"], t["destination"]["destination_id"])
                                                             for t in dests))
+            for t in tags:
+                if t["type"] in ("gclidw", "__gclidw") and t.get("status") == "paused" and \
+                        _truthy(t["params"].get("enableUrlPassthrough")):
+                    notes.append("The paused Conversion Linker %s had URL passthrough on, and no Google tag setting of "
+                                 "this container sets it: URL passthrough is probably lost (to confirm in the "
+                                 "interface, or set by the CMP)." % t["id"])
     print("Platform : %s | Source : %s" % (plat, src))
     print("Meta     :", json.dumps(meta, ensure_ascii=False)[:600])
     for n in notes:

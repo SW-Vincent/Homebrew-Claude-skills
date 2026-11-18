@@ -274,6 +274,8 @@ class Extraction(unittest.TestCase):
                                         {"type": "TEMPLATE", "key": "matchValue", "value": "example.com"}]}]}]}]
         cv["tag"].append({"tagId": "99", "name": "Google Ads", "type": "dest_aw", "parameter": [
             {"type": "TEMPLATE", "key": "destinationId", "value": "AW-123"}], "firingTriggerId": ["2"]})
+        cv["tag"].append({"tagId": "98", "name": "Old linker", "type": "gclidw", "paused": True, "parameter": [
+            B("enableUrlPassthrough", "true")], "firingTriggerId": ["2"]})
         with tempfile.TemporaryDirectory() as tmp:
             proc, view = extract(write(tmp, "export.json", json.dumps(d)))
             _, plain = extract(example("gtm_interface_export_example.json"))
@@ -286,13 +288,19 @@ class Extraction(unittest.TestCase):
         self.assertIn("behavioral analytics data blocked until consent", st["ogt_dtc"])
         self.assertEqual(st["ogt_auto_events"], "on: Scroll | off: Download")
         self.assertEqual(st["ogt_1p_data_v2"], "collection on; automatic detection off; manual selectors off")
-        self.assertEqual(st["ogt_cross_domain"], "domains: ENDS_WITH example.com")
+        self.assertTrue(st["ogt_cross_domain"].startswith("linker on domains: ENDS_WITH example.com"))
+        self.assertIn("not URL passthrough", st["ogt_cross_domain"])
         dest = [t for t in view["tags"] if t["id"] == "99"][0]
         self.assertEqual(dest["destination"], {"destination_id": "AW-123", "product": "Google Ads"})
         self.assertTrue(any("Conversion Linker is not a gap" in n for n in view["notes"]))
+        self.assertTrue(any("Conversion Linker 98 had URL passthrough on" in n for n in view["notes"]))
 
     def test_google_tag_settings_in_client_code_are_not_tags(self):
-        rule = json.dumps({"type": 2, "args": [{"stringValue": "^https?://example\\.com"}, {"stringValue": "page_view"}]})
+        url = {"contextValue": {"namespaceType": 1, "keyParts": ["hitData", "page_location"]}}
+        rule = json.dumps({"type": 2, "args": [
+            {"booleanExpressionValue": {"type": 4, "args": [url, {"stringValue": "^https?://example\\.com"}]}},
+            {"booleanExpressionValue": {"type": 5, "args": [
+                {"stringValue": "page_view"}, {"contextValue": {"namespaceType": 1, "keyParts": ["eventName"]}}]}}]})
         js = """var data = {"resource": {"version":"1","macros":[{"function":"__e"}],
 "tags":[{"function":"__ogt_consent_defaults","tag_id":10,"vtp_adsToggle":true,"vtp_analyticsToggle":true,
  "vtp_adsTargetingMode":"ALL","vtp_analyticsTargetingMode":"ALL"},
@@ -310,9 +318,10 @@ class Extraction(unittest.TestCase):
         st = {x["type"]: x for x in view["google_tag_settings"]}
         self.assertEqual(st["ogt_consent_defaults"]["summary"],
                          "advertising denied by default (all regions); analytics denied by default (all regions)")
-        self.assertEqual(st["ogt_cross_domain"]["summary"], "domains: example\\.com$")
+        self.assertTrue(st["ogt_cross_domain"]["summary"].startswith("linker on domains: example\\.com$"))
         self.assertEqual(st["ccd_ads_conv_marking"]["summary"],
-                         "label LBL when ^https?://example\\.com / page_view")
+                         "label LBL when (hitData.page_location matches regex '^https?://example\\.com' "
+                         "AND eventName equals 'page_view')")
         self.assertEqual(st["ccd_ads_first"]["label"], "processing step")
         self.assertEqual([t for t in view["tags"] if t["id"] == "14"][0]["destination"]["product"], "Google Ads")
         self.assertIn("Setting  : Consent Mode default", proc.stdout)

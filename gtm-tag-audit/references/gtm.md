@@ -299,18 +299,19 @@ script lists them under `google_tag_settings` in the view and prints one `Settin
 export they are the `gtagConfig` list (`type`, `parameter[]`); in the client code they are entries of
 the tag list named `__ogt_*` and `__ccd_*`, fired on `gtm.init` or `gtm.init_consent`. They are
 settings, not tags: the script takes them out of the tag list (the export has no tag for them).
-Seen on one real container (November 2026); meanings marked "to confirm" were not checked against the
-GTM interface.
+Seen on one real container (November 2026). The client code also holds the compiled code of each
+setting (`[50,"__ogt_<name>", ...]` in the runtime): read it to confirm what a key does. The meanings
+below come from that code unless marked otherwise.
 
 | Export `type` / client function | What it sets | Keys and meaning |
 |---|---|---|
-| `ogt_consent_defaults` | Consent Mode default | `adsToggle`, `analyticsToggle` true = denied by default; `adsTargetingMode`, `analyticsTargetingMode` `ALL` = all regions (confirmed by the container's owner) |
-| `ogt_dtc` | data transmission controls (Google, on top of Consent Mode) | `preventAnalytics`: behavioral analytics blocked until consent; `restrictAdvertisingTransmission`: limited advertising data when denied; `preventAllConsent`: to confirm, probably "manage default consent settings for data collection", which declares data as consented |
+| `ogt_consent_defaults` | Consent Mode default | `adsToggle` true: `ad_storage`, `ad_user_data`, `ad_personalization` denied by default; `analyticsToggle` true: `analytics_storage` denied; targeting mode `ALL` = all regions, `SOME` = the regions in `adsTargetedRegions` / `analyticsTargetedRegions` |
+| `ogt_dtc` | data transmission controls (Google, on top of Consent Mode) | `restrictAdvertisingTransmission` with `level` `aggregatedOnly` (limited data) or `noAdvertising`; `preventAnalytics`: behavioral analytics blocked until consent; `preventAllConsent`: per a container owner, the interface option "manage default consent settings for data collection" (in the code, a third transmission type next to advertising and analytics) |
 | `ogt_auto_events` | events collected automatically | `enableOutboundClick`, `enableScroll`, `enableDownload`, `enableHistoryEvents`, `enableForm`, `enableVideo` |
 | `ogt_1p_data_v2` | user-provided data | `isEnabled` (collection), `isAutoEnabled` (automatic detection), `isManualEnabled` (manual selectors) |
-| `ogt_cross_domain` | domain linking | export: `rules` (`matchType`, `matchValue`); client code: list of regular expressions |
-| `__ogt_ads_datatos` (client only) | to confirm: Google Ads data terms | `instanceDestinationId` |
-| `__ccd_ads_conv_marking` (client only) | conversions defined in Google Ads from events or URLs | `conversionRules`: label and matching rules (JSON; operators not documented) |
+| `ogt_cross_domain` | "Configure your domains": cross-domain linker for each destination | export: `rules` (`matchType`, `matchValue`); client code: regular expressions. Sets `linker` with `decorate_forms` and `accept_incoming` true, parameter in the query. It is **not** URL passthrough |
+| `__ogt_ads_datatos` (client only) | Google Ads customer data terms accepted | sets `ads_customer_data_terms` for `instanceDestinationId` |
+| `__ccd_ads_conv_marking` (client only) | conversions defined in Google Ads from events or URLs | `conversionRules`: label and matching rule; the script prints the rule with its operators |
 | `__ccd_em_page_view`, `__ccd_em_form` (client only) | page view and form events of the destination | `historyEvents`, `includeParams`, `deferPageView` |
 | `__ccd_add_1p_data` (client only) | user-provided data accepted on hits | `acceptAutomatic`, `acceptCode`, `acceptManualSelector`, `acceptUserData`, hit types |
 | `__ccd_ads_first`, `__ccd_ads_last`, `__ccd_enable_cm` (client only) | processing steps, no setting | |
@@ -318,6 +319,15 @@ GTM interface.
 `__ccd_*` entries come from the destination's own settings (made on the Google Ads side) and are
 delivered with the container: they are only in the client code. A full audit that has the export
 should also read the client code for them.
+
+Matching rules (`matchingRules`, JSON): `booleanExpressionValue.type` is the operator, read in the
+evaluator of the client code: 1 OR, 2 AND, 3 NOT, 4 matches regex (case-sensitive), 5 equals,
+6 starts with, 7 ends with, 8 contains, 9 to 12 numeric comparisons, 13 in a comma-separated list.
+`contextValue.keyParts` is the field (`hitData.page_location` is the page URL as the browser gives
+it, so an accented host appears in punycode).
+
+`__ecl` (click listener of one trigger, `uniqueTriggerId`) and `__rep` (remote configuration of a
+destination) are infrastructure: the script excludes them, like the other listeners.
 
 **Destination tags**: type `dest_<product>` in the export, `__dest_<product>` in the client code
 (seen: `dest_aw`, Google Ads), parameter `destinationId`. The product comes from the ID prefix
@@ -332,6 +342,11 @@ What to report:
   fields, URLs with parameters); say which are on. Same for user-provided data: which sources.
 - **Conversions defined in Google Ads**: list their rules; a host that does not look like the site's
   (typo, accented letter) is a point to confirm, the rule may never match.
-- **Not in these files**: some settings of the GTM interface may not be exported (no separate
-  conversion linking switch nor URL passthrough was seen). Write "not visible in the container,
-  to check in the interface", never "off".
+- **URL passthrough** has no Google tag setting. It was an option of the Conversion Linker
+  (`enableUrlPassthrough`) or the `url_passthrough` parameter of the Google tag or of a consent
+  default. When a Conversion Linker that had it on is paused after the move (the script says so in
+  a note), URL passthrough is probably lost, unless the CMP sets it: a point to confirm. The
+  cross-domain setting also decorates forms, which the old linker may not have done
+  (`formDecoration`): say so if the behaviour changes.
+- **Not in these files**: some settings of the GTM interface may not be exported. Write "not visible
+  in the container, to check in the interface", never "off".
