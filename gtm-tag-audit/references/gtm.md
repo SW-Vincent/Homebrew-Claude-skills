@@ -342,11 +342,17 @@ What to report:
   fields, URLs with parameters); say which are on. Same for user-provided data: which sources.
 - **Conversions defined in Google Ads**: list their rules; a host that does not look like the site's
   (typo, accented letter) is a point to confirm, the rule may never match.
-- **URL passthrough** has no Google tag setting. It was an option of the Conversion Linker
-  (`enableUrlPassthrough`) or the `url_passthrough` parameter of the Google tag or of a consent
-  default. When a Conversion Linker that had it on is paused after the move (the script says so in
-  a note), URL passthrough is probably lost, unless the CMP sets it: a point to confirm. The
-  cross-domain setting also decorates forms, which the old linker may not have done
-  (`formDecoration`): say so if the behaviour changes.
+- **URL passthrough is not carried over** by the move: no Google tag setting holds it. Google's
+  consent mode guide gives three ways: the Conversion Linker option "Enable linking on all page URLs"
+  (`enableUrlPassthrough`), a configuration parameter `url_passthrough` = true on the Google tag or
+  the destination tag (consistently on all of them), or `gtag('set', 'url_passthrough', true)`
+  before the container. It works only if a consent-aware Google or destination tag is on the page,
+  for links to the same domain, with a click ID in the URL: a destination tag blocked until consent
+  never applies it to visitors who refuse. When a Conversion Linker that had it on is paused after
+  the move (the script says so in a note) and no destination tag carries the parameter, URL
+  passthrough is lost unless the CMP sets it: a point to confirm with a test (refuse all, land with
+  a click ID, follow a link on the same domain). The cross-domain linker (`_gl` on links to the
+  other domains) is a different feature and does not show that passthrough works. The cross-domain
+  setting also decorates forms, which the old linker may not have done (`formDecoration`).
 - **Not in these files**: some settings of the GTM interface may not be exported. Write "not visible
   in the container, to check in the interface", never "off".
