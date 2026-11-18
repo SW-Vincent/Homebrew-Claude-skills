@@ -31,6 +31,7 @@ A three-sheet workbook (**Summary**, **Tags**, **Consent & Findings**) and a sho
 
 - A tag gated on consent but only evaluated at page load (page view, DOM ready...) is flagged: on the page where the visitor first accepts, it does not fire, so the first page view and the origin of the visit are lost.
 - A blocker that contradicts its own trigger, duplicates across tools, leftovers.
+- GTM Google tag settings and destination tags (October 2026 onwards): Consent Mode default, data transmission controls, events collected automatically, user-provided data, cross-domain, conversions defined in Google Ads (client code only).
 - Conditions that can never match as intended, such as a custom event `.*` with the "Use regex matching" box unchecked (GTM).
 - Findings proven by the container are told apart from those that depend on settings it does not show (vendor interface, banner, site markup): the latter come with the test that settles them, which Claude can run in your browser with Claude in Chrome if you agree.
 - Server-side tagging: are hits sent to a server endpoint, and which events and parameters (extra **Server-side** sheet). What the server then relays is not visible from the web container.

@@ -255,6 +255,69 @@ class Extraction(unittest.TestCase):
         self.assertTrue(any("parameter builder" in x for x in sig["8"]))
         self.assertEqual(sig["9"], [])
 
+    def test_google_tag_settings_and_destination_in_export(self):
+        d = json.loads(read(example("gtm_interface_export_example.json")))
+        cv = d["containerVersion"]
+        B = lambda k, v: {"type": "BOOLEAN", "key": k, "value": v}
+        cv["gtagConfig"] = [
+            {"gtagConfigId": "90", "type": "ogt_consent_defaults", "parameter": [
+                B("adsToggle", "true"), B("analyticsToggle", "false"),
+                {"type": "TEMPLATE", "key": "adsTargetingMode", "value": "ALL"}]},
+            {"gtagConfigId": "91", "type": "ogt_dtc", "parameter": [B("preventAnalytics", "true"),
+                                                                    B("restrictAdvertisingTransmission", "false")]},
+            {"gtagConfigId": "92", "type": "ogt_auto_events", "parameter": [B("enableScroll", "true"),
+                                                                            B("enableDownload", "false")]},
+            {"gtagConfigId": "93", "type": "ogt_1p_data_v2", "parameter": [B("isEnabled", "true"),
+                                                                           B("isAutoEnabled", "false")]},
+            {"gtagConfigId": "94", "type": "ogt_cross_domain", "parameter": [{"type": "LIST", "key": "rules", "list": [
+                {"type": "MAP", "map": [{"type": "TEMPLATE", "key": "matchType", "value": "ENDS_WITH"},
+                                        {"type": "TEMPLATE", "key": "matchValue", "value": "example.com"}]}]}]}]
+        cv["tag"].append({"tagId": "99", "name": "Google Ads", "type": "dest_aw", "parameter": [
+            {"type": "TEMPLATE", "key": "destinationId", "value": "AW-123"}], "firingTriggerId": ["2"]})
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, view = extract(write(tmp, "export.json", json.dumps(d)))
+            _, plain = extract(example("gtm_interface_export_example.json"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(plain["google_tag_settings"], [])
+        self.assertIn("Gtag set.: none", _.stdout)
+        st = {x["type"]: x["summary"] for x in view["google_tag_settings"]}
+        self.assertEqual(st["ogt_consent_defaults"],
+                         "advertising denied by default (all regions); no denied default for analytics")
+        self.assertIn("behavioral analytics data blocked until consent", st["ogt_dtc"])
+        self.assertEqual(st["ogt_auto_events"], "on: Scroll | off: Download")
+        self.assertEqual(st["ogt_1p_data_v2"], "collection on; automatic detection off; manual selectors off")
+        self.assertEqual(st["ogt_cross_domain"], "domains: ENDS_WITH example.com")
+        dest = [t for t in view["tags"] if t["id"] == "99"][0]
+        self.assertEqual(dest["destination"], {"destination_id": "AW-123", "product": "Google Ads"})
+        self.assertTrue(any("Conversion Linker is not a gap" in n for n in view["notes"]))
+
+    def test_google_tag_settings_in_client_code_are_not_tags(self):
+        rule = json.dumps({"type": 2, "args": [{"stringValue": "^https?://example\\.com"}, {"stringValue": "page_view"}]})
+        js = """var data = {"resource": {"version":"1","macros":[{"function":"__e"}],
+"tags":[{"function":"__ogt_consent_defaults","tag_id":10,"vtp_adsToggle":true,"vtp_analyticsToggle":true,
+ "vtp_adsTargetingMode":"ALL","vtp_analyticsTargetingMode":"ALL"},
+{"function":"__ogt_cross_domain","tag_id":11,"vtp_rules":["list","example\\\\.com$"]},
+{"function":"__ccd_ads_conv_marking","tag_id":12,"vtp_instanceDestinationId":"AW-123",
+ "vtp_conversionRules":["list",["map","matchingRules",%s,"conversionLabel","LBL"]]},
+{"function":"__ccd_ads_first","tag_id":13,"vtp_instanceDestinationId":"AW-123"},
+{"function":"__dest_aw","tag_id":14,"vtp_destinationId":"AW-123"},
+{"function":"__ecl","tag_id":15},{"function":"__awct","tag_id":16}],
+"predicates":[{"function":"_eq","arg0":["macro",0],"arg1":"gtm.init"}],"rules":[[["if",0],["add",0,1,2,3,4,5,6]]]}};""" % json.dumps(rule)
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, view = extract(write(tmp, "gtm.js", js))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(sorted(t["id"] for t in view["tags"]), ["14", "16"])  # settings and __ecl are not tags
+        st = {x["type"]: x for x in view["google_tag_settings"]}
+        self.assertEqual(st["ogt_consent_defaults"]["summary"],
+                         "advertising denied by default (all regions); analytics denied by default (all regions)")
+        self.assertEqual(st["ogt_cross_domain"]["summary"], "domains: example\\.com$")
+        self.assertEqual(st["ccd_ads_conv_marking"]["summary"],
+                         "label LBL when ^https?://example\\.com / page_view")
+        self.assertEqual(st["ccd_ads_first"]["label"], "processing step")
+        self.assertEqual([t for t in view["tags"] if t["id"] == "14"][0]["destination"]["product"], "Google Ads")
+        self.assertIn("Setting  : Consent Mode default", proc.stdout)
+        self.assertNotIn("processing step", proc.stdout)
+
     def test_unreadable_files_stop_with_a_message_not_a_traceback(self):
         text = read(example("gtm_client_code_example.js"))
         snippet = '// google_tag_manager loader\n(function(w,d,s,l,i){})(window,document,"script","dataLayer","GTM-X");'

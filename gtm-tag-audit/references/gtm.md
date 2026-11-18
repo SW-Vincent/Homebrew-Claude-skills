@@ -212,8 +212,8 @@ ID prefixes of a `googtag` (parameter `tagId` / `vtp_tagId`):
 
 Since October 2026, GTM offers destination tags (Google Analytics, Google Ads, Floodlight) that carry
 the Google tag's shared settings and do the conversion linking themselves; the Conversion Linker is
-then marked Legacy. In a container migrated to them, a missing Conversion Linker is not a gap. Their
-type codes in the client code and the export have not been seen yet: report them as found.
+then marked Legacy. In a container migrated to them, a paused or missing Conversion Linker is not a
+gap. Destination tags and the Google tag settings that go with them: section 8.
 
 No `G-` in the whole container means there is no GA4. A `__gas` variable (Google Analytics
 Settings) that no `__ua` tag references any more is a dead leftover, not GA4.
@@ -243,7 +243,8 @@ alert "to confirm with a real test" (7.3).
 
 ### 7.1 The signals are in the container (the tag manager handles Consent Mode)
 
-Signs: tags that call `gtag('consent','default', ...)` then `gtag('consent','update', ...)`
+Signs: a "Consent Mode default" in the Google tag settings (section 8), or tags that call
+`gtag('consent','default', ...)` then `gtag('consent','update', ...)`
 (Custom HTML, or a CMP template such as OneTrust, Didomi, Axeptio). Note `ad_storage`,
 `analytics_storage`, `ad_user_data`, `ad_personalization`, `wait_for_update`, `url_passthrough`,
 `ads_data_redaction`. Then check whether the Google tags are subject to consent, through a native
@@ -290,3 +291,47 @@ Repeat the measurement after a refusal, then after an acceptance.
 **Server-side**: a server container or first-party collection (transport_url, dedicated collection
 domain) can apply its own filters, invisible here. Write "not determinable from the client
 container, server implementation detected*".
+
+## 8. Google tag settings and destination tags
+
+Since October 2026, a container can hold **Google tag settings** shared by its destination tags. The
+script lists them under `google_tag_settings` in the view and prints one `Setting` line each. In the
+export they are the `gtagConfig` list (`type`, `parameter[]`); in the client code they are entries of
+the tag list named `__ogt_*` and `__ccd_*`, fired on `gtm.init` or `gtm.init_consent`. They are
+settings, not tags: the script takes them out of the tag list (the export has no tag for them).
+Seen on one real container (November 2026); meanings marked "to confirm" were not checked against the
+GTM interface.
+
+| Export `type` / client function | What it sets | Keys and meaning |
+|---|---|---|
+| `ogt_consent_defaults` | Consent Mode default | `adsToggle`, `analyticsToggle` true = denied by default; `adsTargetingMode`, `analyticsTargetingMode` `ALL` = all regions (confirmed by the container's owner) |
+| `ogt_dtc` | data transmission controls (Google, on top of Consent Mode) | `preventAnalytics`: behavioral analytics blocked until consent; `restrictAdvertisingTransmission`: limited advertising data when denied; `preventAllConsent`: to confirm, probably "manage default consent settings for data collection", which declares data as consented |
+| `ogt_auto_events` | events collected automatically | `enableOutboundClick`, `enableScroll`, `enableDownload`, `enableHistoryEvents`, `enableForm`, `enableVideo` |
+| `ogt_1p_data_v2` | user-provided data | `isEnabled` (collection), `isAutoEnabled` (automatic detection), `isManualEnabled` (manual selectors) |
+| `ogt_cross_domain` | domain linking | export: `rules` (`matchType`, `matchValue`); client code: list of regular expressions |
+| `__ogt_ads_datatos` (client only) | to confirm: Google Ads data terms | `instanceDestinationId` |
+| `__ccd_ads_conv_marking` (client only) | conversions defined in Google Ads from events or URLs | `conversionRules`: label and matching rules (JSON; operators not documented) |
+| `__ccd_em_page_view`, `__ccd_em_form` (client only) | page view and form events of the destination | `historyEvents`, `includeParams`, `deferPageView` |
+| `__ccd_add_1p_data` (client only) | user-provided data accepted on hits | `acceptAutomatic`, `acceptCode`, `acceptManualSelector`, `acceptUserData`, hit types |
+| `__ccd_ads_first`, `__ccd_ads_last`, `__ccd_enable_cm` (client only) | processing steps, no setting | |
+
+`__ccd_*` entries come from the destination's own settings (made on the Google Ads side) and are
+delivered with the container: they are only in the client code. A full audit that has the export
+should also read the client code for them.
+
+**Destination tags**: type `dest_<product>` in the export, `__dest_<product>` in the client code
+(seen: `dest_aw`, Google Ads), parameter `destinationId`. The product comes from the ID prefix
+(`AW-`, `G-`, `DC-`; table in section 5); the script gives it under `destination`. A destination tag
+does the conversion linking: with one, a paused or missing Conversion Linker is not a gap.
+
+What to report:
+- **Consent**: a default in the settings and a default set by a tag are both valid; say which one is
+  used, and that a paused default tag is expected after the move. Data transmission controls belong
+  in the same reading.
+- **Privacy**: events collected automatically can carry personal data (file names of downloads, form
+  fields, URLs with parameters); say which are on. Same for user-provided data: which sources.
+- **Conversions defined in Google Ads**: list their rules; a host that does not look like the site's
+  (typo, accented letter) is a point to confirm, the rule may never match.
+- **Not in these files**: some settings of the GTM interface may not be exported (no separate
+  conversion linking switch nor URL passthrough was seen). Write "not visible in the container,
+  to check in the interface", never "off".
