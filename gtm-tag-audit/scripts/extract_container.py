@@ -30,7 +30,8 @@ import json
 import re
 import sys
 
-GTM_INFRA = {"__tg", "__hl", "__lcl", "__cl", "__fsl", "__sdl", "__tl", "__evl", "__ytl"}
+GTM_INFRA = {"__tg", "__hl", "__lcl", "__cl", "__fsl", "__sdl", "__tl", "__evl", "__ytl",
+             "__ecl", "__rep"}  # click listener per trigger; remote config loader of a destination (client code only)
 HOST_RE = re.compile(r"(?:https?:)?//([a-z0-9][a-z0-9.\-]*\.[a-z]{2,})(?=[/:?\"'\\)\s]|$)", re.I)
 
 
@@ -421,6 +422,189 @@ def _google_extras(get, pairs, user_data_desc):
     return extras
 
 
+# Google tag settings of the container (GTM "Google tag" settings since the move to destination tags):
+# gtagConfig entries in the export, __ogt_* / __ccd_* entries in the client code's tag list (they are settings,
+# not tags: the export has no tag for them). __ccd_* come from the destination's own settings (Google Ads side)
+# and are only in the client code. Meanings marked "to confirm" were not checked against the GTM interface.
+SETTING_LABELS = {
+    "ogt_consent_defaults": "Consent Mode default",
+    "ogt_dtc": "data transmission controls",
+    "ogt_auto_events": "events collected automatically",
+    "ogt_1p_data_v2": "user-provided data",
+    "ogt_cross_domain": "cross-domain (domain linking)",
+    "ogt_ads_datatos": "Google Ads customer data terms",
+    "ccd_ads_conv_marking": "conversions defined in Google Ads from events or URLs",
+    "ccd_em_page_view": "page view settings",
+    "ccd_em_form": "form events settings",
+    "ccd_add_1p_data": "user-provided data accepted on hits",
+}
+CCD_STEPS = {"ccd_ads_first", "ccd_ads_last", "ccd_enable_cm", "ccd_ga_first", "ccd_ga_last"}
+DTC_LABELS = {"preventAnalytics": "behavioral analytics data blocked until consent",
+              "restrictAdvertisingTransmission": "advertising data restricted when consent is denied",
+              "preventAllConsent": "\"manage default consent settings for data collection\" (per a container owner)"}
+# Operators of the matching rules (booleanExpressionValue.type), read in the evaluator of the client code.
+RULE_OPS = {1: "OR", 2: "AND", 3: "NOT", 4: "matches regex", 5: "equals", 6: "starts with", 7: "ends with",
+            8: "contains", 9: "<", 10: "<=", 11: ">", 12: ">=", 13: "in list"}
+
+
+def render_rule(e):
+    """Matching rule of a __ccd_* setting (JSON) as text, e.g. (a matches regex 'x' AND b equals 'y')."""
+    if isinstance(e, str):
+        try:
+            e = json.loads(e)
+        except ValueError:
+            return e
+    if "booleanExpressionValue" in e:
+        e = e["booleanExpressionValue"]
+    if "contextValue" in e:
+        return ".".join(e["contextValue"].get("keyParts", []))
+    for k in ("stringValue", "integerValue", "doubleValue", "booleanValue"):
+        if k in e:
+            return "'%s'" % e[k] if k == "stringValue" else str(e[k])
+    op, args = RULE_OPS.get(e.get("type"), "op%s" % e.get("type")), e.get("args", [])
+    if op in ("OR", "AND"):
+        return "(" + (" %s " % op).join(render_rule(a) for a in args) + ")"
+    if op == "NOT":
+        return "NOT " + render_rule(args[0])
+    parts = [render_rule(a) for a in args]
+    if op == "equals" and parts and parts[0].startswith("'"):  # value first: put the field first
+        parts = parts[::-1]
+    return "%s %s %s" % (parts[0], op, " ".join(parts[1:]))
+
+
+def _truthy(v):
+    return str(v).lower() == "true"
+
+
+def describe_setting(kind, p):
+    """One plain-language line for a Google tag setting (kind without its __ prefix, p = its parameters)."""
+    if kind == "ogt_consent_defaults":
+        parts = []
+        for key, what in (("adsToggle", "advertising"), ("analyticsToggle", "analytics")):
+            mode = p.get(key.replace("Toggle", "TargetingMode"))
+            region = "all regions" if mode == "ALL" else "regions: %s" % mode if mode else "regions not stated"
+            parts.append("%s denied by default (%s)" % (what, region) if _truthy(p.get(key))
+                         else "no denied default for %s" % what)
+        return "; ".join(parts)
+    if kind == "ogt_dtc":
+        on = [DTC_LABELS.get(k, k) + (" (%s)" % p["level"] if k == "restrictAdvertisingTransmission" and p.get("level")
+                                      else "") for k, v in p.items() if k != "level" and _truthy(v)]
+        return ("on: " + "; ".join(on)) if on else "nothing restricted (%s all off)" % ", ".join(sorted(p))
+    if kind == "ogt_auto_events":
+        ev = {k[6:]: _truthy(v) for k, v in p.items() if k.startswith("enable") and not k.endswith("Hidden")}
+        on, off = sorted(k for k, v in ev.items() if v), sorted(k for k, v in ev.items() if not v)
+        return "on: %s | off: %s" % (", ".join(on) or "none", ", ".join(off) or "none")
+    if kind == "ogt_1p_data_v2":
+        return "collection %s; automatic detection %s; manual selectors %s" % tuple(
+            "on" if _truthy(p.get(k)) else "off" for k in ("isEnabled", "isAutoEnabled", "isManualEnabled"))
+    if kind == "ogt_cross_domain":
+        return ("linker on domains: %s (forms decorated, incoming links accepted, parameter in the query); "
+                "this is not URL passthrough" % ", ".join(p.get("rules")) if p.get("rules") else "no domain")
+    if kind == "ogt_ads_datatos":
+        return "accepted: sets ads_customer_data_terms for the destination"
+    if kind == "ccd_ads_conv_marking":
+        return "; ".join("label %s when %s" % (r.get("conversionLabel"), render_rule(r.get("matchingRules", "{}")))
+                         for r in p.get("conversionRules") or []) or "no rule"
+    if kind == "ccd_add_1p_data":
+        return "sources accepted: %s; on hits where %s" % (
+            ", ".join(k[6:] for k, v in sorted(p.items()) if k.startswith("accept") and _truthy(v)) or "none",
+            render_rule(p["matchingRules"]) if p.get("matchingRules") else "not stated")
+    return ", ".join("%s=%s" % (k, v) for k, v in sorted(p.items()) if k != "instanceDestinationId") or "no setting"
+
+
+def _and_conditions(e):
+    """Leaf conditions of a matching rule joined by AND only (None if the rule has an OR or a NOT)."""
+    e = e.get("booleanExpressionValue", e)
+    op = RULE_OPS.get(e.get("type"))
+    if op == "AND":
+        out = []
+        for a in e.get("args", []):
+            sub = _and_conditions(a)
+            if sub is None:
+                return None
+            out += sub
+        return out
+    if op in ("OR", "NOT"):
+        return None
+    return [e]
+
+
+def conversion_rule_checks(settings):
+    """Conversions defined in Google Ads whose URL conditions cannot hold together. Google Ads adds a domain
+    condition (^https?://<domain>) fixed when the conversion event is created; if the page the user entered is
+    on another host, or the domain has a character a browser never sends (accented host: sent in punycode),
+    the conversion never fires."""
+    out = []
+    for st in settings:
+        if st["type"] != "ccd_ads_conv_marking":
+            continue
+        for r in st["params"].get("conversionRules") or []:
+            try:
+                conds = _and_conditions(json.loads(r.get("matchingRules", "{}")))
+            except ValueError:
+                continue
+            if not conds:
+                continue
+            hosts, pages = [], []
+            for c in conds:
+                args = c.get("args", [])
+                field = next((".".join(a["contextValue"].get("keyParts", [])) for a in args if "contextValue" in a), "")
+                val = next((a["stringValue"] for a in args if "stringValue" in a), None)
+                if field != "hitData.page_location" or val is None:
+                    continue
+                op = RULE_OPS.get(c.get("type"))
+                m = re.match(r"\^https\?://(.+)$", val) if op == "matches regex" else None
+                if m:
+                    hosts.append(m.group(1).replace("\\.", ".").rstrip("/"))
+                elif op in ("contains", "starts with", "equals"):
+                    h = re.sub(r"^https?://", "", val).split("/")[0]
+                    if "." in h:
+                        pages.append(h)
+            why = []
+            for h in hosts:
+                if any(ord(ch) > 127 for ch in h):
+                    why.append("domain %s has a non-ASCII character, a browser sends such a host in punycode" % h)
+                for pg in pages:
+                    if not (pg == h or pg.endswith("." + h)):
+                        why.append("domain %s and page %s are on different hosts" % (h, pg))
+            if why:
+                out.append("conversion defined in Google Ads that can never fire (label %s): %s. The conversion's "
+                           "domain is not set where its page is: Google Ads fills it in by default on the first "
+                           "screen of the creation (website data source), before the page URL is asked, and it "
+                           "cannot be changed once the conversion exists. Fix: create a new conversion and check "
+                           "the domain on that first screen" % (r.get("conversionLabel"), "; ".join(why)))
+    return out
+
+
+def setting_row(sid, kind, p, source):
+    dest = p.get("instanceDestinationId")
+    return {"id": sid, "type": kind, "label": SETTING_LABELS.get(kind, "processing step" if kind in CCD_STEPS
+                                                                 else "unknown setting"),
+            "destination": dest, "source": source, "summary": describe_setting(kind, p),
+            "params": {k: v for k, v in p.items()}}
+
+
+def _client_setting_params(t, macros):
+    p = {}
+    for k, v in t.items():
+        if not k.startswith("vtp_"):
+            continue
+        k = k[4:]
+        if k == "rules" and isinstance(v, list):  # cross-domain: ["list", "regex", ...]
+            p[k] = [x for x in v[1:] if isinstance(x, str)]
+        elif k == "conversionRules" and isinstance(v, list):
+            p[k] = [dict(zip(x[1::2], x[2::2])) for x in v[1:] if isinstance(x, list) and x and x[0] == "map"]
+        else:
+            p[k] = _gtm_render(v, macros) if isinstance(v, list) else v
+    return p
+
+
+def destination_info(dest_id):
+    pre = (dest_id or "").split("-")[0] + "-" if dest_id and "-" in dest_id else ""
+    return {"destination_id": dest_id, "product": {"AW-": "Google Ads", "G-": "Google Analytics 4",
+                                                     "DC-": "Floodlight / Campaign Manager 360"}.get(pre, "to confirm")}
+
+
 def gtm_client(text, include_infra):
     i = text.index("var data = ") + len("var data = ")
     while text[i] != "{":
@@ -455,9 +639,12 @@ def gtm_client(text, include_infra):
                 u["fires"].update(str(tags[t].get("tag_id")) for t in clauses.get("add", []))
                 u["blocks"].update(str(tags[t].get("tag_id")) for t in clauses.get("block", []))
 
-    out_tags, infra, google_rows, server_map = [], 0, [], {}
+    out_tags, infra, google_rows, server_map, settings = [], 0, [], {}, []
     for j, t in enumerate(tags):
         f = t.get("function", "")
+        if f.startswith(("__ogt_", "__ccd_")):
+            settings.append(setting_row(str(t.get("tag_id")), f[2:], _client_setting_params(t, macros), "client code"))
+            continue
         if f in GTM_INFRA:
             infra += 1
             if not include_infra:
@@ -518,16 +705,25 @@ def gtm_client(text, include_infra):
     notes = ["Client code: tag, trigger and variable names are not in the file. The tag_id is the ID shown in the GTM interface.",
              "%d GTM infrastructure tags (listeners, trigger groups) %s." %
              (infra, "included" if include_infra else "excluded from the view")]
+    for row in out_tags:
+        if row["type"].startswith("__dest_"):
+            row["destination"] = destination_info(row["params"].get("destinationId"))
+    if settings:
+        notes.append("%d Google tag settings (__ogt_*, __ccd_*) are listed under google_tag_settings, not as tags; "
+                     "__ccd_* come from the destination's own settings (Google Ads side) and are not in the export."
+                     % len(settings))
     checks = ["regex pattern under a plain-text operator, never matches as intended (regex box unchecked?): "
               "%s%s%s" % (pred_text(k), "; fires tags " + ", ".join(sorted(u["fires"])) if u["fires"] else "",
                           "; blocks tags " + ", ".join(sorted(u["blocks"])) if u["blocks"] else "")
               for k, u in sorted(suspect.items())]
+    checks += conversion_rule_checks(settings)
     variables = [{"id": "m%d" % i, "type": m.get("function"), "reads": _gtm_macro_desc(m, macros),
                   **({"code": _gtm_render(m.get("vtp_javascript"), macros)} if m.get("function") == "__jsm" else {})}
                  for i, m in enumerate(macros)]
     meta = {"container_version": r.get("version"), "tags_total": len(tags), "tags_infrastructure": infra,
             "macros": len(macros), "predicates": len(preds), "rules": len(rules),
-            "_server_side": list(server_map.values()), "_checks": checks, "_variables": variables}
+            "_server_side": list(server_map.values()), "_checks": checks, "_variables": variables,
+            "_settings": settings}
     notes.append("What each {{variable}} reads is in the 'variables' list of the view (--out); a JS variable shown "
                  "shortened carries its index [mN], its full code is in that list.")
     return meta, out_tags, [], notes, data
@@ -662,11 +858,27 @@ def gtm_export(d, include_infra):
                                   "; fires tags " + ", ".join(u["fires"]) if u["fires"] else "",
                                   "; blocks tags " + ", ".join(u["blocks"]) if u["blocks"] else
                                   ("" if u["fires"] else "; used by no tag")))
+    settings = []
+    for g in cv.get("gtagConfig", []) or []:
+        p = {}
+        for prm in g.get("parameter", []) or []:
+            if prm.get("key") == "rules" and prm.get("type") == "LIST":  # cross-domain rules
+                p["rules"] = ["%s %s" % ({x["key"]: x.get("value") for x in m.get("map", [])}.get("matchType"),
+                                         {x["key"]: x.get("value") for x in m.get("map", [])}.get("matchValue"))
+                              for m in prm.get("list", [])]
+            else:
+                p[prm.get("key")] = prm.get("value") if prm.get("type") in ("TEMPLATE", "BOOLEAN", "INTEGER") \
+                    else _gtm_params([prm]).get(prm.get("key"))
+        settings.append(setting_row(str(g.get("gtagConfigId")), g.get("type"), p, "export"))
+    for row in tags:
+        if str(row["type"]).startswith("dest_"):
+            row["destination"] = destination_info(row["params"].get("destinationId"))
     c = cv.get("container", {})
     meta = {"container_public_id": c.get("publicId"), "container_name": c.get("name"),
             "version_id": cv.get("containerVersionId"), "version_name": cv.get("name"),
             "tags_total": len(tags), "triggers": len(trig), "variables": len(cv.get("variable", [])),
             "custom_templates": templates, "_server_side": list(server_map.values()), "_checks": checks,
+            "_settings": settings,
             "_variables": [{"id": v.get("variableId"), "name": v.get("name"), "type": v.get("type"),
                             "params": _gtm_params(v.get("parameter"))} for v in cv.get("variable", [])]}
     notes = ["Interface export: names, triggers, blockers and native consent settings are available.",
@@ -1038,8 +1250,22 @@ def main():
     variables = meta.pop("_variables", [])
     server_side = meta.pop("_server_side", [])
     checks = meta.pop("_checks", None)  # None: no mechanical check written for this platform yet
+    settings = meta.pop("_settings", None)
     view = {"platform": plat, "source": src, "meta": meta, "notes": notes, "tags": tags, "triggers": trigs,
             "variables": variables, "server_side": server_side, "checks": checks}
+    if settings is not None:
+        view["google_tag_settings"] = settings
+        dests = [t for t in tags if t.get("destination")]
+        if dests:
+            notes.append("Destination tags (%s): they do the conversion linking, so a paused or absent Conversion "
+                         "Linker is not a gap." % ", ".join("%s %s" % (t["id"], t["destination"]["destination_id"])
+                                                            for t in dests))
+            for t in tags:
+                if t["type"] in ("gclidw", "__gclidw") and t.get("status") == "paused" and \
+                        _truthy(t["params"].get("enableUrlPassthrough")):
+                    notes.append("The paused Conversion Linker %s had URL passthrough on, and no Google tag setting of "
+                                 "this container sets it: URL passthrough is probably lost (to confirm in the "
+                                 "interface, or set by the CMP)." % t["id"])
     print("Platform : %s | Source : %s" % (plat, src))
     print("Meta     :", json.dumps(meta, ensure_ascii=False)[:600])
     for n in notes:
@@ -1052,6 +1278,13 @@ def main():
                                "%d to look at" % len(checks) if checks else "nothing found"))
     for c in checks or []:
         print("Check    :", c)
+    if settings is not None:
+        shown = [x for x in settings if x["label"] != "processing step"]
+        print("Gtag set.: %s" % ("%d settings" % len(shown) if shown else
+                                 "none (container without Google tag settings: not migrated to destination tags)"))
+        for x in shown:
+            print("Setting  : %s [%s %s%s]: %s" % (x["label"], x["type"], x["id"],
+                                                   " " + x["destination"] if x["destination"] else "", x["summary"]))
     for e in server_side:
         print("Endpoint : %s <- declared by tag(s) %s, %d hit type(s) mapped (detail in --out, key server_side)"
               % (e["endpoint"], ", ".join(e["declared_by"]) or "-", len(e["hits"])))

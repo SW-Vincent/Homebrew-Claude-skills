@@ -121,9 +121,16 @@ matching) or of a vendor consent API. The detail is in each tag's `signals` and 
 list of the view. Always follow them up with `references/server_side_user_data_consent_apis.md`
 (Steps 5 and 6).
 
-A fourth line, `Checks`, lists what the script can prove from the container alone: today, a regex
-pattern under a plain-text operator (an event `.*` with the "Use regex matching" box unchecked),
-which never matches (GTM only for now). Report each one as an anomaly, with the tags it fires or
+For GTM, `Gtag set.` and its `Setting` lines give the container's Google tag settings (Consent Mode
+default, data transmission controls, events collected automatically, user-provided data,
+cross-domain, conversions defined in Google Ads): read `references/gtm.md` section 8. The client code
+holds settings the export does not (those made on the Google Ads side): in a full audit, read both
+when you have both.
+
+A fourth line, `Checks`, lists what the script can prove from the container alone (GTM only for
+now): a regex pattern under a plain-text operator (an event `.*` with the "Use regex matching" box
+unchecked), which never matches; a conversion defined in Google Ads whose domain and page cannot
+match (client code). Report each one as an anomaly, with the tags it fires or
 blocks.
 
 The table shortens long conditions (`…(cut, see --out)`) and JavaScript variables. Judge a condition
@@ -158,6 +165,8 @@ client code did not show (paused tags, native consent).
 - **Data sent**: resolve each reference to what it really reads (dataLayer variable, cookie, URL),
   not "macro 24". Note the event (standard or custom) and the key variables passed. Flag email or
   phone sent in clear to an advertising vendor.
+- **Destination tags** (GTM `dest_aw`, `__dest_aw`...): a Google tag for the product of its
+  `destinationId` prefix; with one, a paused or missing Conversion Linker is not a gap.
 - **Technical type**: GTM the function (`awct`, `cvt_...`), MTM the type (`Matomo (event)`,
   `CustomHtml`), Tag Commander the template (`Template 2652`) with its nature if you know it.
 
@@ -197,6 +206,7 @@ Never write "not implemented" on that basis alone.
 
 - **GTM**: two cases, detailed in `references/gtm.md` section 7.
   - Consent Mode signals present in the container: verdict Basic, Advanced or Mixed, with proof.
+    A default in the Google tag settings counts like a default tag; say which one is used.
   - No signal (Consent Mode probably handled by the CMP): two scenarios to state, with asterisk.
     Google tags not subject to consent: consent management defect OR Consent Mode Basic. Google
     tags subject to consent: consent handled the old way OR Consent Mode Advanced.
