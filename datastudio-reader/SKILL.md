@@ -141,6 +141,47 @@ viewer would:
   (another data source, a filter, a platform breakdown). When reusing figures, take them from the
   component the user's deliverable used, and point out differences that matter.
 
+## Report health checks (scalability)
+
+When the user asks to check or audit a report, or when the report is read with edit access, add these
+checks to the answer under "Scalability". Report them and propose the fix; change nothing without
+the user's go-ahead.
+
+- **Read the configuration, not the screen.** Everything needed is in `getReport`: the theme in
+  `reportConfig.report.resource.theme` (palette hex values), and each page in
+  `reportConfig.page[].componentConfig`. Never open color pickers one by one, and **never change the
+  theme to see what follows it**: the theme is the client's, it must stay as it is.
+- **Draft or published.** A viewer gets the published version. With edit access, the draft is only
+  returned when the `getReport` body has `includePages: true` and `draftRequestMode: 1`; without
+  them the response holds the published revision only. Say which one was checked.
+- **Theme colors used outside the theme.** A color is stored as `{color: "#hex", opacity}` and, when
+  linked to the theme, also carries `themeRef: {index: n}` (`themeRef: {}` for the main color). A
+  color equal to a palette color but without `themeRef` is hard-coded: changing the theme will not
+  update it. Alert: "Scalability: X formatting settings use theme colors outside the theme (fix:
+  pick them from the Thème row of the color picker)", with the pages and elements concerned.
+  - Borders (`…border.color`) are excluded from the count: Data Studio never stores a `themeRef` for a
+    border, even when it is picked from the Thème row, so they cannot be fixed. Give their number
+    as information only.
+  - Colors set inside a rich text box (inline text color) cannot be linked to the theme either:
+    mention them separately.
+  - Colors that are not in the palette (an off-brand red, a default grey) are a different point:
+    list them only if the user asks for brand consistency.
+- **No UI Kit page.** If no page (usually hidden from viewers) gathers the report's reusable
+  components, alert: "Scalability: no UI Kit (suggest adding one)". A UI Kit holds the KPI tile and
+  its variants, a section block with its title, the comment variants (single line, multi-line,
+  page footnote), the icons in use (light and dark), the theme palette as labelled swatches, and the
+  header and footer, so that new pages are built by copying them rather than restyling.
+
+## Terms of use (checked on 25 November 2026)
+
+Reading a report through Data Studio's internal API is a grey zone of Google's terms. The user decided to use this skill anyway: do not raise the point again during normal use.
+
+- **Looker Studio Terms of Service** (version of 22 April 2026), section 2.4(b): no attempt to reverse engineer the Service or any of its components. **Acceptable Use Policy** (version of 3 September 2019): no use of the Service or a component "in a manner not authorized by Google". Neither text mentions automated reading or scraping.
+- **Google Terms of Service** (version of 30 July 2026): automated access is prohibited only against machine-readable instructions such as robots.txt, and Data Studio's robots.txt allows everything.
+- The sanction is suspension or termination of the user's account. The safety rules below (no refresh, no altered data request, download setting respected, few queries) keep the use close to a viewer's.
+- Organisations under the Google Cloud Platform Agreement or Looker Studio Pro follow other terms, not checked.
+- **When to check again**: only if the user asks, or during a skill audit from May 2027 on (six months after this check), by comparing the version dates above with the current pages. Never during an extraction.
+
 ## Safety rules
 
 - **Read-only.** The script captures the report's own requests and, by itself, only calls

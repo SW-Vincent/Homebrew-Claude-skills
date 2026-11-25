@@ -74,7 +74,7 @@ A Matomo Cloud instance with MCP Server 5.1.2 (November 2026), read-only raw API
 
 Two skills for **Data Studio** (formerly Looker Studio) reports. Google's public API returns no report data, so these skills read what the report itself loads, in your own browser session: they need **Claude in Chrome**, and they only see reports you can open (public, unlisted link or shared with you).
 
-- **datastudio-reader** reads a report: page by page, each chart with its title and section, field labels, formats and formulas, exact (unrounded) values, comparison period and totals. Other periods can be read by changing the date control, as a viewer would.
+- **datastudio-reader** reads a report: page by page, each chart with its title and section, field labels, formats and formulas, exact (unrounded) values, comparison period and totals. Other periods can be read by changing the date control, as a viewer would. When asked to check a report, or when it is read with edit access, it also reports scalability issues (theme colours set by hand outside the theme, no UI Kit page) and proposes the fix, without changing anything.
 - **datastudio-deck-update** updates a deck or report with those figures, typically last quarter's steering committee deck rolled over to the next quarter. It maps each slide to its chart in the report, checks that the extraction gives back the previous deck's figures on the previous period, extracts the new period, computes everything by code, and rebuilds charts from raw values. It keeps the previous deck's structure and texts, writes factual takeaways only, and lists what the dashboard cannot update.
 
 Install both: datastudio-deck-update relies on datastudio-reader.
@@ -93,6 +93,8 @@ Install both: datastudio-deck-update relies on datastudio-reader.
 - **No downloads** on your machine (Export, PDF, PNG) without asking.
 
 ⚠️ The skills rely on Data Studio's **internal, undocumented API**: it can change without notice. `datastudio-reader/references/internal-api.md` describes what the script relies on and what to check when it breaks.
+
+⚖️ Reading a report through this internal API is a grey zone of Google's terms (no reverse engineering of the Service or its components, no use "in a manner not authorized by Google"). The skill records what was checked and when, in its "Terms of use" section: read it before using the skills, and use them at your own risk.
 
 ### Tests
 
